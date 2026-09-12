@@ -1,0 +1,3 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
+export async function POST(req:NextRequest){const s=await createClient();const {data:{user}}=await s.auth.getUser();if(!user)return NextResponse.json({error:'Unauthorized'},{status:401});const {designId}=await req.json();const {data:design}=await s.from('designs').select('id').eq('id',designId).eq('user_id',user.id).single();if(!design)return NextResponse.json({error:'Not found'},{status:404});const {data,error}=await s.from('design_products').select('*').eq('design_id',designId);return NextResponse.json(error?{error:error.message}:data,{status:error?500:200})}

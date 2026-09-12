@@ -1,0 +1,2 @@
+import ProjectForm from '@/components/ProjectForm';
+export default function Page(){return <div className="max-w-6xl mx-auto"><div className="mb-6"><div className="kicker">RoomAI Style Lab</div><h1 className="text-4xl md:text-6xl font-semibold mt-2">See the same room. Choose with your eyes.</h1><p className="text-stone-600 mt-3 max-w-3xl text-lg">Select up to six styles, compare them side by side, or pin one favorite and swipe the alternatives against it.</p></div><ProjectForm/></div>}

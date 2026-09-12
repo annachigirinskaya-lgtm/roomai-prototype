@@ -1,0 +1,4 @@
+import { ROOM_CATEGORIES } from '@/lib/catalog';
+import { Product, ProjectInput } from '@/lib/types';
+import { searchProducts } from '@/providers/products';
+export async function buildShoppingList(project:ProjectInput){const cats=ROOM_CATEGORIES[project.room_type]??['main furniture','rug','lighting','decor'];const weights=project.budget_mode==='save'?0.82:project.budget_mode==='premium'?1.08:0.95;let remaining=project.budget*weights;const chosen:Product[]=[];for(let i=0;i<cats.length;i++){const category=cats[i];const slots=cats.length-i;const target=Math.max(15,remaining/slots);const options=await searchProducts(category,project.style,project.color_palette,target);const affordable=options.filter(x=>x.price<=target*1.1).sort((a,b)=>Math.abs(a.price-target)-Math.abs(b.price-target));const item=affordable[0]??options.sort((a,b)=>a.price-b.price)[0];if(item){chosen.push(item);remaining-=item.price}}return chosen}
