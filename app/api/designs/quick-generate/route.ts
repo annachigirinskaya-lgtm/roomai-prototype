@@ -1,0 +1,43 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { generateFromRoom } from '@/services/ai-image';
+import { STYLES } from '@/lib/catalog';
+import type { ProjectInput } from '@/lib/types';
+
+export const runtime='nodejs';
+export const maxDuration=300;
+
+const MAX_IMAGE_BYTES=20*1024*1024;
+const WINDOW_MS=60*60*1000;
+const MAX_PER_WINDOW=12;
+const globalRate=globalThis as unknown as {roomAiRate?:Map<string,number[]>};
+const rate=globalRate.roomAiRate??new Map<string,number[]>();
+globalRate.roomAiRate=rate;
+
+function rateLimited(req:NextRequest){
+  const ip=req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()||'unknown';
+  const now=Date.now();
+  const recent=(rate.get(ip)||[]).filter(t=>now-t<WINDOW_MS);
+  if(recent.length>=MAX_PER_WINDOW)return true;
+  recent.push(now);rate.set(ip,recent);return false;
+}
+
+export async function POST(req:NextRequest){
+  if(!process.env.OPENAI_API_KEY)return NextResponse.json({error:'OpenAI is not connected in Vercel yet. Add OPENAI_API_KEY in Environment Variables and redeploy.'},{status:503});
+  if(rateLimited(req))return NextResponse.json({error:'Hourly prototype generation limit reached. Please try again later.'},{status:429});
+  try{
+    const data=await req.formData();
+    const image=data.get('image');
+    const raw=data.get('project');
+    if(!(image instanceof File)||typeof raw!=='string')return NextResponse.json({error:'Room photo and project settings are required.'},{status:400});
+    if(image.size>MAX_IMAGE_BYTES)return NextResponse.json({error:'The photo must be smaller than 20 MB.'},{status:413});
+    if(!['image/jpeg','image/png','image/webp'].includes(image.type))return NextResponse.json({error:'Use a JPG, PNG or WebP room photo.'},{status:415});
+    const parsed=JSON.parse(raw) as ProjectInput;
+    if(!STYLES.includes(parsed.style as never))return NextResponse.json({error:'Choose a valid interior style.'},{status:400});
+    const project:ProjectInput={...parsed,budget:Number(parsed.budget)||1500,source_image_url:''};
+    const output=await generateFromRoom(Buffer.from(await image.arrayBuffer()),image.type,project,[]);
+    return new Response(new Uint8Array(output),{status:200,headers:{'content-type':'image/png','cache-control':'private, no-store','x-roomai-style':encodeURIComponent(project.style)}});
+  }catch(error:any){
+    console.error('Quick generation failed',error);
+    return NextResponse.json({error:typeof error?.message==='string'?error.message:'Could not generate this design.'},{status:500});
+  }
+}
