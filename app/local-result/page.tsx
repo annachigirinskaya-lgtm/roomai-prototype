@@ -1,10 +1,22 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, MouseEvent, useEffect, useState } from 'react';
 import { getLocalDesign, getLocalDesigns, saveLocalDesign, type LocalDesign } from '@/lib/local-designs';
 
 type DesignVersion={id:string;label:string;url:string;current:boolean};
+type SelectedItem={category:string;label:string;x:number;y:number;query:string;storeLinks:{store:string;url:string}[]};
+
+const ITEM_CATEGORIES=[
+  ['rug','Rug'],['sofa','Sofa'],['armchair','Armchair'],['coffee table','Coffee table'],['side table','Side table'],['tv console','TV console'],['lighting','Lighting'],['curtains','Curtains'],['wall art','Wall art'],['plant','Plant'],['wall panel','Wall panel'],['fireplace','Fireplace'],['decor','Decor'],
+] as const;
+
+const SWAP_OPTIONS:Record<string,{label:string;detail:string}[]>={
+  rug:[{label:'More luxurious',detail:'a more luxurious designer rug with richer texture'},{label:'Larger',detail:'a larger properly scaled area rug'},{label:'Organic shape',detail:'a fashionable organic-shaped rug'},{label:'Subtle pattern',detail:'an elegant rug with a subtle pattern'}],
+  sofa:[{label:'Curved sofa',detail:'an elegant curved designer sofa'},{label:'Sectional',detail:'a comfortable correctly scaled sectional sofa'},{label:'Velvet',detail:'a tailored velvet sofa'},{label:'Bouclé',detail:'a sculptural bouclé sofa'}],
+  lighting:[{label:'Statement light',detail:'a dramatic statement chandelier'},{label:'Modern',detail:'a refined modern ceiling light'},{label:'Brass',detail:'an elegant brass light fixture'},{label:'Sculptural',detail:'a sculptural designer light'}],
+  'coffee table':[{label:'Wood',detail:'a warm solid-wood designer coffee table'},{label:'Stone',detail:'an elegant stone coffee table'},{label:'Glass',detail:'a refined glass and metal coffee table'},{label:'Organic shape',detail:'an organic-shaped designer coffee table'}],
+};
 
 const PANEL_LAYOUTS=[
   {label:'Full wall',value:'Keep the wooden wall panel across the full available solid wall behind the TV. Refine it so it looks intentional and premium. Do not change anything else.'},
@@ -30,6 +42,9 @@ export default function LocalResultPage(){
   const [editing,setEditing]=useState(false);
   const [editError,setEditError]=useState('');
   const [versions,setVersions]=useState<DesignVersion[]>([]);
+  const [selectedItem,setSelectedItem]=useState<SelectedItem>();
+  const [identifying,setIdentifying]=useState(false);
+  const [identifyError,setIdentifyError]=useState('');
 
   useEffect(()=>{
     const objectUrls:string[]=[];
@@ -53,6 +68,36 @@ export default function LocalResultPage(){
     setSelectedPreset(label);
     setInstruction(value);
     setEditError('');
+  }
+
+  function searchLinks(category:string,label:string){
+    const query=`${design?.style||'interior'} ${project.color_palette||'neutral'} ${category} for living room`;
+    const q=encodeURIComponent(query);
+    return {category,label,x:selectedItem?.x||50,y:selectedItem?.y||50,query,storeLinks:[{store:'Amazon',url:`https://www.amazon.com/s?k=${q}`},{store:'Walmart',url:`https://www.walmart.com/search?q=${q}`}]};
+  }
+
+  async function selectImageItem(event:MouseEvent<HTMLButtonElement>){
+    if(!design||identifying)return;
+    const box=event.currentTarget.getBoundingClientRect();
+    const x=((event.clientX-box.left)/box.width)*100;
+    const y=((event.clientY-box.top)/box.height)*100;
+    setIdentifying(true);setIdentifyError('');setSelectedItem(undefined);
+    try{
+      const form=new FormData();form.append('image',design.image,'current-design.png');form.append('x',String(x));form.append('y',String(y));form.append('style',design.style);form.append('palette',project.color_palette||'neutral');
+      const response=await fetch('/api/designs/identify-item',{method:'POST',body:form});
+      const result=await response.json();
+      if(!response.ok)throw new Error(result.error||'Could not identify this item.');
+      setSelectedItem(result);
+    }catch(reason){
+      setSelectedItem({category:'decor',label:'Choose item below',x,y,query:'',storeLinks:[]});
+      setIdentifyError(reason instanceof Error?reason.message:'Choose the item manually below.');
+    }finally{setIdentifying(false)}
+  }
+
+  function chooseSwap(detail:string){
+    if(!selectedItem)return;
+    setSelectedPreset(`Replace ${selectedItem.label}`);
+    setInstruction(`Replace only the selected ${selectedItem.category} located around ${selectedItem.x.toFixed(1)}% from the left and ${selectedItem.y.toFixed(1)}% from the top with ${detail}. Keep it in the same functional area and preserve the exact room, architecture, camera, lighting and every other item unchanged.`);
   }
 
   async function submitEdit(event:FormEvent){
@@ -90,8 +135,39 @@ export default function LocalResultPage(){
         <p className="text-stone-600 mt-3">{design.style} · {project.color_palette||'Selected palette'}</p>
         {design.editInstruction&&<p className="mt-3 text-sm text-stone-500">Edited version: {design.editInstruction}</p>}
       </div>
-      <img src={url} alt={`AI-generated ${design.style} design of the uploaded room`} className="w-full object-cover"/>
+      <button type="button" onClick={selectImageItem} className="relative block w-full cursor-crosshair text-left" aria-label="Tap an interior item to select it">
+        <img src={url} alt={`AI-generated ${design.style} design of the uploaded room`} className="w-full object-cover"/>
+        {selectedItem&&<span className="absolute h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-white bg-black/80 shadow-lg" style={{left:`${selectedItem.x}%`,top:`${selectedItem.y}%`}}/>}
+        {identifying&&<span className="absolute inset-0 grid place-items-center bg-black/35 text-lg font-semibold text-white">Identifying item…</span>}
+        {!selectedItem&&!identifying&&<span className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/80 px-4 py-2 text-sm font-semibold text-white shadow-lg">Tap an item to change it</span>}
+      </button>
     </section>
+
+    {selectedItem&&<section className="card p-6 md:p-8">
+      <div className="kicker">Selected on the image</div>
+      <h2 className="text-2xl font-semibold mt-2">{selectedItem.label}</h2>
+      {identifyError&&<p className="mt-2 text-sm text-amber-700">{identifyError}</p>}
+      <p className="mt-2 text-stone-600">Choose a replacement direction, shop current retailer results, or correct the detected item.</p>
+
+      <div className="grid grid-cols-2 gap-2 mt-5">
+        {(SWAP_OPTIONS[selectedItem.category]||[
+          {label:'More luxurious',detail:`a more luxurious designer ${selectedItem.category}`},
+          {label:'More modern',detail:`a refined modern ${selectedItem.category}`},
+          {label:'Lighter',detail:`a lighter-colored ${selectedItem.category}`},
+          {label:'Darker',detail:`a darker statement ${selectedItem.category}`},
+        ]).map(option=><button key={option.label} type="button" onClick={()=>chooseSwap(option.detail)} className="rounded-2xl border border-stone-300 bg-white px-3 py-3 text-sm font-medium hover:bg-stone-100">Replace · {option.label}</button>)}
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 mt-4">
+        {selectedItem.storeLinks.map(link=><a key={link.store} href={link.url} target="_blank" rel="noopener noreferrer" className="btn-soft text-center">Shop on {link.store}</a>)}
+      </div>
+      <p className="mt-3 text-xs text-stone-500">These buttons open live retailer search results. Prices, product images and availability come from the retailer, not from RoomAI.</p>
+
+      <details className="mt-5">
+        <summary className="cursor-pointer font-medium">Wrong item? Choose manually</summary>
+        <div className="flex flex-wrap gap-2 mt-3">{ITEM_CATEGORIES.map(([category,label])=><button key={category} type="button" onClick={()=>setSelectedItem(searchLinks(category,label))} className="rounded-full border border-stone-300 px-3 py-2 text-sm">{label}</button>)}</div>
+      </details>
+    </section>}
 
     {versions.length>1&&<section className="card p-6 md:p-8">
       <div className="kicker">Saved variations</div>
