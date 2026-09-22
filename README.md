@@ -35,9 +35,9 @@ Purchased premium credits are stored separately and do not expire. Paid plans in
 1. Create/verify your Stripe business account using your own legal/business details.
 2. In Stripe Dashboard -> Payout settings, add the bank account where you want subscription revenue deposited.
 3. Create three recurring Prices:
-   - Weekly: $12.99, recurring every 7 days
-   - Monthly: $29.99, recurring monthly
-   - Yearly: $249, recurring yearly
+   - Weekly: $6.99, recurring every 7 days
+   - Monthly: $14.99, recurring monthly
+   - Yearly: $59.99, recurring yearly
 4. Create three one-time Prices:
    - 10 premium credits: $4.99
    - 30 premium credits: $9.99
@@ -56,7 +56,7 @@ Purchased premium credits are stored separately and do not expire. Paid plans in
 ## 3. OpenAI
 1. Create an OpenAI API key.
 2. Put it in `OPENAI_API_KEY` in `.env.local`.
-3. Default image model is `gpt-image-2`.
+3. The cost-controlled default image model is `gpt-image-1.5` at medium 1536×1024. Override it with `OPENAI_IMAGE_MODEL` only after checking the current model price.
 
 ## 4. Retail affiliate accounts
 Apply separately to Amazon Associates and other retailer/affiliate programs. Put only identifiers/tags in `.env.local`. Retailer payout settings are configured in each retailer/affiliate dashboard, not in this codebase.

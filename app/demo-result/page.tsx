@@ -13,13 +13,13 @@ const catalog=[
 ];
 export default function DemoResult(){
  const [p,setP]=useState<DemoProject>({});
- useEffect(()=>{try{setP(JSON.parse(localStorage.getItem('roomai_demo_project')||'{}'))}catch{}},[]);
+ useEffect(()=>{try{const saved=JSON.parse(localStorage.getItem('roomai_demo_project')||'{}');const winner=localStorage.getItem('roomai_demo_winner');setP({...saved,style:winner||saved.style})}catch{}},[]);
  const budget=Number(p.budget||1500);
  const products=useMemo(()=>{let running=0;return catalog.filter(x=>{if(running+x.price<=budget*1.05){running+=x.price;return true}return false})},[budget]);
  const total=products.reduce((n,x)=>n+x.price,0);
  return <div className="space-y-8">
    <section className="card overflow-hidden">
-     <div className="p-6 md:p-8"><div className="text-xs uppercase tracking-[.2em] text-stone-500">Demo result</div><h1 className="text-3xl md:text-5xl font-semibold mt-2">{p.name||'Your shoppable room'}</h1><p className="text-stone-600 mt-3">{p.style||'Modern'} · {p.color_palette||'Warm White'} · target budget ${budget.toLocaleString()}</p></div>
+     <div className="p-6 md:p-8"><div className="text-xs uppercase tracking-[.2em] text-stone-500">Demo preview · not AI-generated</div><h1 className="text-3xl md:text-5xl font-semibold mt-2">{p.name||'Your shoppable room'}</h1><p className="text-stone-600 mt-3">{p.style||'Modern'} · {p.color_palette||'Warm White'} · target budget ${budget.toLocaleString()}</p></div>
      <div className="min-h-[360px] md:min-h-[520px] bg-gradient-to-br from-amber-100 via-stone-50 to-emerald-50 relative overflow-hidden">
        {p.previewImage?<img src={p.previewImage} alt="Your room" className="absolute inset-0 w-full h-full object-cover"/>:<><div className="absolute left-[8%] right-[8%] bottom-[16%] h-[30%] rounded-[2rem] bg-stone-100 border-[10px] border-amber-700/40 shadow-xl"></div><div className="absolute right-[9%] top-[18%] w-28 h-52 rounded-full bg-emerald-800/45"></div></>}
        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent"></div>
