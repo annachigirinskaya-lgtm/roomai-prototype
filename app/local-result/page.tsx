@@ -2,7 +2,9 @@
 
 import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
-import { getLocalDesign, saveLocalDesign, type LocalDesign } from '@/lib/local-designs';
+import { getLocalDesign, getLocalDesigns, saveLocalDesign, type LocalDesign } from '@/lib/local-designs';
+
+type DesignVersion={id:string;label:string;url:string;current:boolean};
 
 const PANEL_LAYOUTS=[
   {label:'Full wall',value:'Keep the wooden wall panel across the full available solid wall behind the TV. Refine it so it looks intentional and premium. Do not change anything else.'},
@@ -27,15 +29,24 @@ export default function LocalResultPage(){
   const [selectedPreset,setSelectedPreset]=useState('');
   const [editing,setEditing]=useState(false);
   const [editError,setEditError]=useState('');
+  const [versions,setVersions]=useState<DesignVersion[]>([]);
 
   useEffect(()=>{
-    let objectUrl='';
+    const objectUrls:string[]=[];
     const id=new URLSearchParams(window.location.search).get('id')||'';
-    getLocalDesign(id).then(item=>{
+    getLocalDesign(id).then(async item=>{
       if(!item){setError('This saved design was not found on this device.');return}
-      objectUrl=URL.createObjectURL(item.image);setDesign(item);setUrl(objectUrl);
+      const objectUrl=URL.createObjectURL(item.image);objectUrls.push(objectUrl);setDesign(item);setUrl(objectUrl);
+      const rootId=item.rootId||item.id;
+      const all=await getLocalDesigns();
+      const family=all.filter(candidate=>candidate.id===rootId||candidate.rootId===rootId);
+      setVersions(family.map((candidate,index)=>{
+        if(candidate.id===item.id)return {id:candidate.id,label:candidate.editInstruction||'Current version',url:objectUrl,current:true};
+        const versionUrl=URL.createObjectURL(candidate.image);objectUrls.push(versionUrl);
+        return {id:candidate.id,label:candidate.editInstruction||`Original design ${index+1}`,url:versionUrl,current:false};
+      }));
     }).catch(()=>setError('Could not open the saved design.'));
-    return()=>{if(objectUrl)URL.revokeObjectURL(objectUrl)};
+    return()=>objectUrls.forEach(objectUrl=>URL.revokeObjectURL(objectUrl));
   },[]);
 
   function choosePreset(label:string,value:string){
@@ -59,7 +70,7 @@ export default function LocalResultPage(){
       }
       const revised=await response.blob();
       const id=crypto.randomUUID();
-      await saveLocalDesign({...design,id,createdAt:Date.now(),image:revised,parentId:design.id,editInstruction:selectedPreset||instruction.trim()});
+      await saveLocalDesign({...design,id,createdAt:Date.now(),image:revised,parentId:design.id,rootId:design.rootId||design.id,editInstruction:selectedPreset||instruction.trim()});
       window.location.assign(`/local-result?id=${encodeURIComponent(id)}`);
     }catch(reason){
       setEditError(reason instanceof Error?reason.message:'Could not edit this design.');
@@ -81,6 +92,17 @@ export default function LocalResultPage(){
       </div>
       <img src={url} alt={`AI-generated ${design.style} design of the uploaded room`} className="w-full object-cover"/>
     </section>
+
+    {versions.length>1&&<section className="card p-6 md:p-8">
+      <div className="kicker">Saved variations</div>
+      <h2 className="text-2xl font-semibold mt-2">Compare your versions</h2>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-5">
+        {versions.map(version=><Link key={version.id} href={`/local-result?id=${encodeURIComponent(version.id)}`} className={`overflow-hidden rounded-2xl border-2 ${version.current?'border-black':'border-transparent bg-stone-100'}`}>
+          <img src={version.url} alt={version.label} className="aspect-[3/2] w-full object-cover"/>
+          <div className="p-3 text-sm font-medium">{version.current?'Selected · ':''}{version.label}</div>
+        </Link>)}
+      </div>
+    </section>}
 
     <section className="card p-6 md:p-8">
       <div className="kicker">Edit this exact design</div>
