@@ -9,6 +9,8 @@ DESIGN INTENSITY: make a substantial, clearly visible whole-room transformation 
 
 STYLE: apply one unmistakable style only: ${p.style}. Required visual signature: ${signature}. Do not drift into generic beige contemporary design and do not mix visual signatures from other catalog styles.
 
+LIVING ROOM FUNCTION: if this is a living room, the finished design must include a clearly visible, realistically sized television and an intentional media composition unless the client explicitly asks for no TV. Place it only on an existing uninterrupted solid wall that can physically fit it. Integrate its surround, console and lighting into the selected style without covering, moving or narrowing any door, doorway, window or balcony opening.
+
 COLOR: ${p.color_palette}${p.custom_colors?`; requested custom colors: ${p.custom_colors}`:''}. Use this palette throughout furniture, textiles, finishes and accents with tonal depth rather than making everything one flat color.
 
 BUDGET: target $${p.budget}; mode: ${p.budget_mode}. The budget controls the price tier and material substitutions, NOT the completeness, creativity or visual richness of the design. Use affordable look-alikes and achievable treatments when necessary instead of simplifying the design.
