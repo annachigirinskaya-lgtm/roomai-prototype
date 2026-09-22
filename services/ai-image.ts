@@ -77,3 +77,32 @@ export async function generateFromRoom(source:Buffer,mime:string,p:ProjectInput,
   if(!b64)throw new Error('No image returned');
   return Buffer.from(b64,'base64');
 }
+
+export function refinementPrompt(instruction:string){
+  return `Edit the PROVIDED INTERIOR DESIGN IMAGE. This is a precise revision of the same image, not a new room design.
+
+REQUESTED CHANGE: ${instruction}
+
+NON-NEGOTIABLE: make only the requested change. Preserve the exact camera position, crop, perspective, room dimensions, ceiling, floor, lighting direction and the position and size of every door, doorway, passage, window, balcony opening, column, vent, switch, outlet, kitchen cabinet, countertop and fixed fixture. Keep all furniture, decor, materials and colors unchanged unless the request explicitly names them. Never close, cover, move, narrow, resize or invent an architectural opening. Never move a wall or redesign the room layout.
+
+If the request concerns a wall panel, feature wall, marble, slats, millwork or fireplace, resize or replace that finish only within the existing uninterrupted solid wall area. Leave the remainder as a realistic finished wall matching the room, and do not extend any treatment across a door, doorway, window or balcony opening.
+
+Return one seamless photorealistic interior photograph at the same aspect ratio, with no text, labels, arrows, dimensions, before/after split, collage or watermark.`;
+}
+
+export async function refineRoomDesign(source:Buffer,mime:string,instruction:string){
+  if(!process.env.OPENAI_API_KEY)throw new Error('OPENAI_API_KEY missing');
+  const client=new OpenAI({apiKey:process.env.OPENAI_API_KEY});
+  const file=await toFile(source,'design',{type:mime});
+  const res=await client.images.edit({
+    model:IMAGE_MODEL,
+    image:file,
+    prompt:refinementPrompt(instruction),
+    size:outputSize(source,mime,IMAGE_MODEL),
+    quality:IMAGE_QUALITY,
+    ...(IMAGE_MODEL.startsWith('gpt-image-2')?{}:{input_fidelity:'high' as const}),
+  });
+  const b64=res.data?.[0]?.b64_json;
+  if(!b64)throw new Error('No revised image returned');
+  return Buffer.from(b64,'base64');
+}
