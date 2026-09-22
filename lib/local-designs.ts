@@ -1,4 +1,4 @@
-export type LocalDesign={id:string;style:string;createdAt:number;project:Record<string,unknown>;image:Blob};
+export type LocalDesign={id:string;style:string;createdAt:number;project:Record<string,unknown>;image:Blob;parentId?:string;editInstruction?:string};
 const DB='roomai-local';
 const STORE='designs';
 
