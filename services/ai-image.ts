@@ -106,3 +106,28 @@ export async function refineRoomDesign(source:Buffer,mime:string,instruction:str
   if(!b64)throw new Error('No revised image returned');
   return Buffer.from(b64,'base64');
 }
+
+export async function placeProductInRoom(source:Buffer,mime:string,product:Buffer,productMime:string,category:string,x:number,y:number){
+  if(!process.env.OPENAI_API_KEY)throw new Error('OPENAI_API_KEY missing');
+  const client=new OpenAI({apiKey:process.env.OPENAI_API_KEY});
+  const roomFile=await toFile(source,'room-design',{type:mime});
+  const productFile=await toFile(product,'selected-product',{type:productMime});
+  const prompt=`Edit the FIRST image, which is the existing room design. The SECOND image is an exact real product reference chosen by the customer.
+
+Replace only the existing ${category} located around ${x.toFixed(1)}% from the left and ${y.toFixed(1)}% from the top of the FIRST image with the exact product shown in the SECOND image. Preserve the product's recognizable shape, proportions, material, color, pattern and distinctive details. Remove the product photo's background. Place the product naturally at the selected location with physically correct scale, perspective, contact shadow and room lighting.
+
+NON-NEGOTIABLE: change no other object. Preserve every other furniture item, decoration, wall treatment, door, doorway, window, balcony opening, kitchen element, room dimension, camera position, crop and lighting. The result must align with the first image everywhere except the selected object.
+
+Return one seamless photorealistic interior photograph. Do not return a collage, product card, label, arrow, text, dimensions or watermark.`;
+  const res=await client.images.edit({
+    model:IMAGE_MODEL,
+    image:[roomFile,productFile],
+    prompt,
+    size:outputSize(source,mime,IMAGE_MODEL),
+    quality:IMAGE_QUALITY,
+    ...(IMAGE_MODEL.startsWith('gpt-image-2')?{}:{input_fidelity:'high' as const}),
+  });
+  const b64=res.data?.[0]?.b64_json;
+  if(!b64)throw new Error('No product preview returned');
+  return Buffer.from(b64,'base64');
+}
