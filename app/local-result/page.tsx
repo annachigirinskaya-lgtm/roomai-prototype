@@ -8,8 +8,22 @@ type DesignVersion={id:string;label:string;url:string;current:boolean};
 type SelectedItem={category:string;label:string;x:number;y:number;query:string;storeLinks:{store:string;url:string}[]};
 
 const ITEM_CATEGORIES=[
-  ['rug','Rug'],['sofa','Sofa'],['armchair','Armchair'],['coffee table','Coffee table'],['side table','Side table'],['tv console','TV console'],['lighting','Lighting'],['curtains','Curtains'],['wall art','Wall art'],['plant','Plant'],['wall panel','Wall panel'],['fireplace','Fireplace'],['decor','Decor'],
+  ['vase','Vase'],['flower arrangement','Flowers'],['decorative bowl','Decorative bowl'],['tray','Tray'],['candle','Candle'],['books','Books'],['sculpture','Sculpture'],['throw pillow','Pillow'],['blanket','Blanket'],['rug','Rug'],['sofa','Sofa'],['armchair','Armchair'],['ottoman','Ottoman'],['coffee table','Coffee table'],['side table','Side table'],['dining table','Dining table'],['dining chair','Dining chair'],['bar stool','Bar stool'],['tv','TV'],['tv console','TV console'],['floor lamp','Floor lamp'],['table lamp','Table lamp'],['ceiling light','Ceiling light'],['chandelier','Chandelier'],['curtains','Curtains'],['wall art','Wall art'],['mirror','Mirror'],['indoor plant','Plant'],['plant pot','Plant pot'],['wall panel','Wall panel'],['fireplace','Fireplace'],['shelving','Shelving'],['cabinet','Cabinet'],['decor accessory','Other decor'],
 ] as const;
+
+async function cropAroundPoint(image:Blob,x:number,y:number){
+  const bitmap=await createImageBitmap(image);
+  const side=Math.max(64,Math.min(bitmap.width,bitmap.height)*0.32);
+  const centerX=(x/100)*bitmap.width;
+  const centerY=(y/100)*bitmap.height;
+  const sourceX=Math.max(0,Math.min(bitmap.width-side,centerX-side/2));
+  const sourceY=Math.max(0,Math.min(bitmap.height-side,centerY-side/2));
+  const canvas=document.createElement('canvas');canvas.width=512;canvas.height=512;
+  const context=canvas.getContext('2d');
+  if(!context){bitmap.close();throw new Error('Could not inspect this image area.')}
+  context.drawImage(bitmap,sourceX,sourceY,side,side,0,0,512,512);bitmap.close();
+  return await new Promise<Blob>((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Could not prepare this image area.')),'image/png'));
+}
 
 const SWAP_OPTIONS:Record<string,{label:string;detail:string}[]>={
   rug:[{label:'More luxurious',detail:'a more luxurious designer rug with richer texture'},{label:'Larger',detail:'a larger properly scaled area rug'},{label:'Organic shape',detail:'a fashionable organic-shaped rug'},{label:'Subtle pattern',detail:'an elegant rug with a subtle pattern'}],
@@ -45,6 +59,10 @@ export default function LocalResultPage(){
   const [selectedItem,setSelectedItem]=useState<SelectedItem>();
   const [identifying,setIdentifying]=useState(false);
   const [identifyError,setIdentifyError]=useState('');
+  const [productImage,setProductImage]=useState<File>();
+  const [productPreviewUrl,setProductPreviewUrl]=useState('');
+  const [placingProduct,setPlacingProduct]=useState(false);
+  const [productError,setProductError]=useState('');
 
   useEffect(()=>{
     const objectUrls:string[]=[];
@@ -63,6 +81,8 @@ export default function LocalResultPage(){
     }).catch(()=>setError('Could not open the saved design.'));
     return()=>objectUrls.forEach(objectUrl=>URL.revokeObjectURL(objectUrl));
   },[]);
+
+  useEffect(()=>()=>{if(productPreviewUrl)URL.revokeObjectURL(productPreviewUrl)},[productPreviewUrl]);
 
   function choosePreset(label:string,value:string){
     setSelectedPreset(label);
@@ -83,7 +103,8 @@ export default function LocalResultPage(){
     const y=((event.clientY-box.top)/box.height)*100;
     setIdentifying(true);setIdentifyError('');setSelectedItem(undefined);
     try{
-      const form=new FormData();form.append('image',design.image,'current-design.png');form.append('x',String(x));form.append('y',String(y));form.append('style',design.style);form.append('palette',project.color_palette||'neutral');
+      const crop=await cropAroundPoint(design.image,x,y);
+      const form=new FormData();form.append('image',design.image,'current-design.png');form.append('crop',crop,'selected-area.png');form.append('x',String(x));form.append('y',String(y));form.append('style',design.style);form.append('palette',project.color_palette||'neutral');
       const response=await fetch('/api/designs/identify-item',{method:'POST',body:form});
       const result=await response.json();
       if(!response.ok)throw new Error(result.error||'Could not identify this item.');
@@ -98,6 +119,27 @@ export default function LocalResultPage(){
     if(!selectedItem)return;
     setSelectedPreset(`Replace ${selectedItem.label}`);
     setInstruction(`Replace only the selected ${selectedItem.category} located around ${selectedItem.x.toFixed(1)}% from the left and ${selectedItem.y.toFixed(1)}% from the top with ${detail}. Keep it in the same functional area and preserve the exact room, architecture, camera, lighting and every other item unchanged.`);
+  }
+
+  function chooseProductImage(file?:File){
+    if(productPreviewUrl)URL.revokeObjectURL(productPreviewUrl);
+    setProductImage(file);setProductPreviewUrl(file?URL.createObjectURL(file):'');setProductError('');
+  }
+
+  async function placeExactProduct(){
+    if(!design||!selectedItem||!productImage||placingProduct)return;
+    setPlacingProduct(true);setProductError('');
+    try{
+      const form=new FormData();
+      form.append('room',design.image,'current-design.png');
+      form.append('product',productImage,productImage.name||'selected-product.png');
+      form.append('category',selectedItem.category);form.append('x',String(selectedItem.x));form.append('y',String(selectedItem.y));
+      const response=await fetch('/api/designs/place-product',{method:'POST',body:form});
+      if(!response.ok){const message=await response.json().catch(()=>({}));throw new Error(message.error||'Could not place this product in the room.')}
+      const revised=await response.blob();const id=crypto.randomUUID();
+      await saveLocalDesign({...design,id,createdAt:Date.now(),image:revised,parentId:design.id,rootId:design.rootId||design.id,editInstruction:`Exact product · ${selectedItem.label}`});
+      window.location.assign(`/local-result?id=${encodeURIComponent(id)}`);
+    }catch(reason){setProductError(reason instanceof Error?reason.message:'Could not place this product in the room.');setPlacingProduct(false)}
   }
 
   async function submitEdit(event:FormEvent){
@@ -162,6 +204,19 @@ export default function LocalResultPage(){
         {selectedItem.storeLinks.map(link=><a key={link.store} href={link.url} target="_blank" rel="noopener noreferrer" className="btn-soft text-center">Shop on {link.store}</a>)}
       </div>
       <p className="mt-3 text-xs text-stone-500">These buttons open live retailer search results. Prices, product images and availability come from the retailer, not from RoomAI.</p>
+
+      <div className="mt-6 rounded-3xl bg-stone-100 p-5">
+        <h3 className="text-lg font-semibold">Try the exact product in your room</h3>
+        <p className="mt-2 text-sm text-stone-600">After choosing a product on Amazon or Walmart, save its product photo or take a screenshot. Return here and upload it. RoomAI will replace only the selected {selectedItem.label.toLowerCase()} with that exact product.</p>
+        <label className="btn-soft mt-4 block cursor-pointer text-center">
+          {productImage?'Choose a different product photo':'Upload product photo or screenshot'}
+          <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={event=>chooseProductImage(event.target.files?.[0])}/>
+        </label>
+        {productPreviewUrl&&<img src={productPreviewUrl} alt="Selected real product reference" className="mx-auto mt-4 max-h-56 rounded-2xl border border-stone-200 bg-white object-contain"/>}
+        {productError&&<p className="mt-3 text-sm text-red-700">{productError}</p>}
+        <button type="button" onClick={placeExactProduct} disabled={!productImage||placingProduct} className="btn-primary mt-4 w-full disabled:cursor-not-allowed disabled:opacity-50">{placingProduct?'Placing this product…':'Place this exact product in my room'}</button>
+        <p className="mt-3 text-center text-xs text-stone-500">Creates one new AI preview. The current room version stays saved.</p>
+      </div>
 
       <details className="mt-5">
         <summary className="cursor-pointer font-medium">Wrong item? Choose manually</summary>
