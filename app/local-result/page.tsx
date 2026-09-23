@@ -230,6 +230,7 @@ export default function LocalResultPage(){
           {label:'Darker',detail:`a darker statement ${selectedItem.category}`},
         ]).map(option=><button key={option.label} type="button" onClick={()=>chooseSwap(option.detail)} className="rounded-2xl border border-stone-300 bg-white px-3 py-3 text-sm font-medium hover:bg-stone-100">Replace · {option.label}</button>)}
       </div>
+      <p className="mt-3 text-xs text-stone-500">Replacement buttons isolate the tapped object so the new version changes that item instead of redrawing the room.</p>
 
       <div className="grid grid-cols-2 gap-2 mt-4">
         {selectedItem.storeLinks.map(link=><a key={link.store} href={link.url} target="_blank" rel="noopener noreferrer" className="btn-soft text-center">Shop on {link.store}</a>)}
