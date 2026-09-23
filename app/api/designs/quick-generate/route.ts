@@ -22,6 +22,7 @@ function rateLimited(req:NextRequest){
 }
 
 export async function POST(req:NextRequest){
+  if(process.env.NEXT_PUBLIC_SUPABASE_URL&&process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)return NextResponse.json({error:'Please sign in and use your account credits to generate designs.'},{status:403});
   if(!process.env.OPENAI_API_KEY)return NextResponse.json({error:'OpenAI is not connected in Vercel yet. Add OPENAI_API_KEY in Environment Variables and redeploy.'},{status:503});
   if(rateLimited(req))return NextResponse.json({error:'Hourly prototype generation limit reached. Please try again later.'},{status:429});
   try{

@@ -13,13 +13,15 @@ const packs=[
   {id:'pack100',name:'Power add-on',price:'$24.99',credits:'100 premium credits'},
 ] as const;
 
-export default function Pricing(){
+export default function Pricing({paymentsEnabled=false}:{paymentsEnabled?:boolean}){
   const [busy,setBusy]=useState('');
   async function checkout(kind:'subscription'|'pack',id:string){
     const key=`${kind}:${id}`;setBusy(key);
-    const r=await fetch('/api/stripe/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(kind==='subscription'?{plan:id}:{pack:id})});
-    const d=await r.json();setBusy('');
-    if(r.ok&&d.url)location.href=d.url;else alert(d.error||'Please log in first.');
+    try{
+      const r=await fetch('/api/stripe/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(kind==='subscription'?{plan:id}:{pack:id})});
+      const d=await r.json();
+      if(r.ok&&d.url)location.href=d.url;else alert(d.error||'Please log in first.');
+    }catch{alert('Checkout is temporarily unavailable. Please try again later.')}finally{setBusy('')}
   }
   return <div className="space-y-10">
     <section>
@@ -38,7 +40,7 @@ export default function Pricing(){
           <h3 className="text-xl font-semibold mt-1">{p.name}</h3><p className="text-3xl font-bold mt-2">{p.price}</p>
           <p className="mt-3 font-medium">Unlimited basic redesigns*</p>
           <p className="text-sm text-stone-600 mt-1">+ {p.premium}</p><p className="text-sm text-stone-500 mt-1">{p.period}</p>
-          <button className="btn-primary mt-6 w-full" disabled={busy===`subscription:${p.id}`} onClick={()=>checkout('subscription',p.id)}>{busy===`subscription:${p.id}`?'Opening checkout…':'Choose plan'}</button>
+          <button className="btn-primary mt-6 w-full disabled:opacity-50" disabled={!paymentsEnabled||Boolean(busy)} onClick={()=>checkout('subscription',p.id)}>{!paymentsEnabled?'Coming soon':busy===`subscription:${p.id}`?'Opening checkout…':'Choose plan'}</button>
         </div>)}
       </div>
       <p className="text-xs text-stone-500 mt-4">*Unlimited basic redesigns are subject to reasonable fair-use and anti-abuse limits. Purchased premium credits do not expire.</p>
@@ -60,7 +62,7 @@ export default function Pricing(){
       <h2 className="text-2xl font-semibold">Need premium tools?</h2>
       <p className="text-stone-600 mt-2">Buy a one-time credit pack without changing your subscription. These credits do not expire.</p>
       <div className="grid md:grid-cols-3 gap-4 mt-5">
-        {packs.map(p=><div className="card p-6" key={p.id}><h3 className="text-lg font-semibold">{p.name}</h3><p className="text-3xl font-bold mt-2">{p.price}</p><p className="mt-2">{p.credits}</p><button className="btn-soft mt-5 w-full" disabled={busy===`pack:${p.id}`} onClick={()=>checkout('pack',p.id)}>{busy===`pack:${p.id}`?'Opening checkout…':'Buy credits'}</button></div>)}
+        {packs.map(p=><div className="card p-6" key={p.id}><h3 className="text-lg font-semibold">{p.name}</h3><p className="text-3xl font-bold mt-2">{p.price}</p><p className="mt-2">{p.credits}</p><button className="btn-soft mt-5 w-full disabled:opacity-50" disabled={!paymentsEnabled||Boolean(busy)} onClick={()=>checkout('pack',p.id)}>{!paymentsEnabled?'Coming soon':busy===`pack:${p.id}`?'Opening checkout…':'Buy credits'}</button></div>)}
       </div>
     </section>
   </div>

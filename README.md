@@ -32,6 +32,7 @@ Purchased premium credits are stored separately and do not expire. Paid plans in
 4. Copy Service Role Key to `.env.local` (server only; never expose it in browser code).
 
 ## 2. Create Stripe and connect your bank
+Before accepting payments, run `supabase/billing.sql` in the same Supabase project after `schema.sql`. It locks profile balances against client edits and adds atomic, duplicate-safe purchase fulfillment. Do not enable checkout before this migration is applied.
 1. Create/verify your Stripe business account using your own legal/business details.
 2. In Stripe Dashboard -> Payout settings, add the bank account where you want subscription revenue deposited.
 3. Create three recurring Prices:
@@ -51,7 +52,10 @@ Purchased premium credits are stored separately and do not expire. Paid plans in
    - `customer.subscription.deleted`
    - `invoice.paid`
    - `checkout.session.completed`
+   - `checkout.session.async_payment_succeeded`
 9. Copy the webhook signing secret to `STRIPE_WEBHOOK_SECRET`.
+10. Enable the Stripe Customer Portal in your Stripe Dashboard so customers can manage or cancel subscriptions.
+11. Set all required values in the existing Vercel project's Production Environment Variables, including `NEXT_PUBLIC_APP_URL=https://roomai-prototype-one.vercel.app`. Use matching **test** keys and price IDs first; verify sign-up, purchase, webhook credit update, cancellation and renewal in test mode. After live Stripe onboarding and bank verification, switch the keys and prices to live values, then set `ROOMAI_PUBLIC_BILLING_ENABLED=true` and redeploy. Never mix test and live keys/price IDs. The app validates the six prices before sending customers to Checkout and retains the pricing shown above.
 
 ## 3. OpenAI
 1. Create an OpenAI API key.
@@ -76,8 +80,7 @@ Open http://localhost:3000.
 ## Production TODOs
 - Replace mock product provider with approved retailer APIs/data feeds.
 - Add tax/legal pages (Terms, Privacy, affiliate disclosure, refund/cancellation policy).
-- Add Stripe Customer Portal for cancellation and plan changes.
-- Add webhook idempotency table to prevent duplicate top-up processing.
+- Run `supabase/billing.sql` in the connected Supabase project and test the Stripe webhook and Customer Portal with test payments. Code alone does not configure the Stripe or Supabase accounts.
 - Add atomic database/RPC credit deduction to eliminate race conditions under high concurrency.
 - Add image moderation/validation, file-size limits, rate limiting, observability and retries.
 - Store generated image URLs as signed URLs on read (current DB URL expires after 7 days).

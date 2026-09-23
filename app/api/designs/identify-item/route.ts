@@ -18,6 +18,7 @@ function storeLinks(query:string){
 }
 
 export async function POST(req:NextRequest){
+  if(process.env.NEXT_PUBLIC_SUPABASE_URL&&process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)return NextResponse.json({error:'Prototype item selection is unavailable when account billing is enabled.'},{status:403});
   if(!process.env.OPENAI_API_KEY)return NextResponse.json({error:'OpenAI is not connected in Vercel yet.'},{status:503});
   try{
     const data=await req.formData();

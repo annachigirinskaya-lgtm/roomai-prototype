@@ -21,6 +21,7 @@ function rateLimited(req:NextRequest){
 }
 
 export async function POST(req:NextRequest){
+  if(process.env.NEXT_PUBLIC_SUPABASE_URL&&process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)return NextResponse.json({error:'Prototype edits are unavailable when account billing is enabled.'},{status:403});
   if(!process.env.OPENAI_API_KEY)return NextResponse.json({error:'OpenAI is not connected in Vercel yet.'},{status:503});
   if(rateLimited(req))return NextResponse.json({error:'Hourly prototype editing limit reached. Please try again later.'},{status:429});
   try{
