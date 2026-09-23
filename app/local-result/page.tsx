@@ -25,6 +25,30 @@ async function cropAroundPoint(image:Blob,x:number,y:number){
   return await new Promise<Blob>((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Could not prepare this image area.')),'image/png'));
 }
 
+function selectionRadius(category:string){
+  const small=['vase','flower arrangement','decorative bowl','tray','candle','books','sculpture','table lamp','plant pot','decor accessory'];
+  const soft=['throw pillow','blanket'];
+  const large=['rug','sofa','curtains','wall panel','fireplace','shelving','cabinet'];
+  if(small.includes(category))return {x:0.09,y:0.14};
+  if(soft.includes(category))return {x:0.16,y:0.18};
+  if(large.includes(category))return {x:0.28,y:0.30};
+  return {x:0.18,y:0.22};
+}
+
+async function createSelectionMask(image:Blob,x:number,y:number,category:string){
+  const bitmap=await createImageBitmap(image);
+  const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;
+  const context=canvas.getContext('2d');
+  if(!context){bitmap.close();throw new Error('Could not prepare the selected area.')}
+  context.fillStyle='rgba(0,0,0,1)';context.fillRect(0,0,canvas.width,canvas.height);
+  const radius=selectionRadius(category);
+  context.globalCompositeOperation='destination-out';
+  context.beginPath();
+  context.ellipse((x/100)*canvas.width,(y/100)*canvas.height,canvas.width*radius.x,canvas.height*radius.y,0,0,Math.PI*2);
+  context.fill();bitmap.close();
+  return await new Promise<Blob>((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Could not prepare the selected area.')),'image/png'));
+}
+
 const SWAP_OPTIONS:Record<string,{label:string;detail:string}[]>={
   rug:[{label:'More luxurious',detail:'a more luxurious designer rug with richer texture'},{label:'Larger',detail:'a larger properly scaled area rug'},{label:'Organic shape',detail:'a fashionable organic-shaped rug'},{label:'Subtle pattern',detail:'an elegant rug with a subtle pattern'}],
   sofa:[{label:'Curved sofa',detail:'an elegant curved designer sofa'},{label:'Sectional',detail:'a comfortable correctly scaled sectional sofa'},{label:'Velvet',detail:'a tailored velvet sofa'},{label:'Bouclé',detail:'a sculptural bouclé sofa'}],
@@ -55,6 +79,7 @@ export default function LocalResultPage(){
   const [selectedPreset,setSelectedPreset]=useState('');
   const [editing,setEditing]=useState(false);
   const [editError,setEditError]=useState('');
+  const [useSelectionMask,setUseSelectionMask]=useState(false);
   const [versions,setVersions]=useState<DesignVersion[]>([]);
   const [selectedItem,setSelectedItem]=useState<SelectedItem>();
   const [identifying,setIdentifying]=useState(false);
@@ -87,6 +112,7 @@ export default function LocalResultPage(){
   function choosePreset(label:string,value:string){
     setSelectedPreset(label);
     setInstruction(value);
+    setUseSelectionMask(false);
     setEditError('');
   }
 
@@ -118,7 +144,8 @@ export default function LocalResultPage(){
   function chooseSwap(detail:string){
     if(!selectedItem)return;
     setSelectedPreset(`Replace ${selectedItem.label}`);
-    setInstruction(`Replace only the selected ${selectedItem.category} located around ${selectedItem.x.toFixed(1)}% from the left and ${selectedItem.y.toFixed(1)}% from the top with ${detail}. Keep it in the same functional area and preserve the exact room, architecture, camera, lighting and every other item unchanged.`);
+    setUseSelectionMask(true);
+    setInstruction(`MANDATORY VISIBLE REPLACEMENT: replace the selected ${selectedItem.category} located around ${selectedItem.x.toFixed(1)}% from the left and ${selectedItem.y.toFixed(1)}% from the top with ${detail}. The replacement must be clearly different in silhouette, material, color or pattern; do not return the original selected object unchanged. Keep it in the same functional area and preserve the exact room, architecture, camera, lighting and every other item unchanged.`);
   }
 
   function chooseProductImage(file?:File){
@@ -150,6 +177,10 @@ export default function LocalResultPage(){
       const form=new FormData();
       form.append('image',design.image,'current-design.png');
       form.append('instruction',instruction.trim());
+      if(useSelectionMask&&selectedItem){
+        const mask=await createSelectionMask(design.image,selectedItem.x,selectedItem.y,selectedItem.category);
+        form.append('mask',mask,'selection-mask.png');
+      }
       const response=await fetch('/api/designs/refine',{method:'POST',body:form});
       if(!response.ok){
         const message=await response.json().catch(()=>({}));
@@ -252,7 +283,7 @@ export default function LocalResultPage(){
 
       <form onSubmit={submitEdit} className="mt-6 space-y-3">
         <label htmlFor="edit-instruction" className="block font-medium">Your change</label>
-        <textarea id="edit-instruction" value={instruction} onChange={event=>{setInstruction(event.target.value);setSelectedPreset('')}} maxLength={600} rows={4} className="w-full rounded-2xl border border-stone-300 bg-white p-4" placeholder="Example: Keep the panel only on the left side and make its edge softly curved with warm LED light. Change nothing else."/>
+        <textarea id="edit-instruction" value={instruction} onChange={event=>{setInstruction(event.target.value);setSelectedPreset('');setUseSelectionMask(false)}} maxLength={600} rows={4} className="w-full rounded-2xl border border-stone-300 bg-white p-4" placeholder="Example: Keep the panel only on the left side and make its edge softly curved with warm LED light. Change nothing else."/>
         {editError&&<p className="text-sm text-red-700">{editError}</p>}
         <button type="submit" disabled={editing||!instruction.trim()} className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-50">{editing?'Editing this detail…':'Generate edited version'}</button>
         <p className="text-center text-xs text-stone-500">One option creates one new AI image. Your current image remains saved.</p>
