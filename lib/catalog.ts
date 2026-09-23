@@ -50,8 +50,8 @@ export const CREDIT_COSTS={
   standard_design:1,          // charged only to Free; paid plans = 0
   shoppable_design:2,         // design + real-product matching
   high_res_render:2,          // final high-resolution render
-  budget_remix:1,             // cheaper / premium budget rework
-  product_swap:1,             // replace one selected product / object
+  budget_remix:1,             // free plan; included with paid subscriptions
+  product_swap:1,             // free plan; included with paid subscriptions
 } as const;
 export const CREDIT_PACKS={
   pack10:{credits:10,label:'10 premium credits',price:'$4.99'},

@@ -1,24 +1,21 @@
-# RoomAI Shop V2 — Accessible Base + Premium Add-ons
+# RoomAI Shop V2 — Subscription Checkout Preview
 
 A shoppable AI interior-design SaaS starter: Supabase Auth/Database/Storage, Stripe subscriptions + one-time credit top-ups, OpenAI image editing, room budgets, product matching, affiliate-link placeholders, credit ledger, click analytics, and protected dashboards.
 
 ## Pricing configured in the app
 - Free: $0 / 5 basic redesigns
-- Weekly: $6.99 / unlimited basic redesigns + 5 premium credits every 7 days
-- Monthly: $14.99 / unlimited basic redesigns + 15 premium credits per month
-- Yearly: $59.99 / unlimited basic redesigns + 60 premium credits per year
-- Premium top-up: 10 credits / $4.99
-- Premium top-up: 30 credits / $9.99
-- Premium top-up: 100 credits / $24.99
+- Weekly: $6.99 / standard redesigns and detail edits + 5 premium credits every 7 days
+- Monthly: $14.99 / standard redesigns and detail edits + 15 premium credits per month
+- Yearly: $59.99 / standard redesigns and detail edits + 60 premium credits per year
+- Credit pack checkout is hidden until pricing and fulfillment have been tested separately.
 
 Purchased premium credits are stored separately and do not expire. Paid plans include unlimited standard redesigns subject to fair-use/rate limits. Premium credits refill after a successful renewal invoice.
 
 ## Credit costs
 - Standard redesign: Free users 1 credit; included on paid plans
 - Shoppable design + real-product matching: 2 premium credits
-- Budget remix / cheaper version: 1 premium credit
-- Product swap: 1 premium credit
-- High-resolution final render: 2 premium credits
+- Budget remix and edits of individual objects: included on paid plans (fair-use limits apply)
+- High-resolution export is not yet available for purchase.
 
 ## What is real vs placeholder
 **Real integrations included:** Supabase auth/database/storage wiring, Stripe Checkout + webhook wiring for subscriptions and one-time credit packs, OpenAI `gpt-image-2` edit wiring.
@@ -39,11 +36,7 @@ Before accepting payments, run `supabase/billing.sql` in the same Supabase proje
    - Weekly: $6.99, recurring every 7 days
    - Monthly: $14.99, recurring monthly
    - Yearly: $59.99, recurring yearly
-4. Create three one-time Prices:
-   - 10 premium credits: $4.99
-   - 30 premium credits: $9.99
-   - 100 premium credits: $24.99
-5. Copy the six `price_...` IDs into `.env.local`.
+4. Copy the three recurring `price_...` IDs into `.env.local`. One-time credit pack prices are optional and are not currently advertised.
 6. Copy Stripe secret + publishable keys.
 7. Create webhook endpoint: `https://YOURDOMAIN.com/api/stripe/webhook`.
 8. Subscribe the webhook to:
@@ -55,7 +48,7 @@ Before accepting payments, run `supabase/billing.sql` in the same Supabase proje
    - `checkout.session.async_payment_succeeded`
 9. Copy the webhook signing secret to `STRIPE_WEBHOOK_SECRET`.
 10. Enable the Stripe Customer Portal in your Stripe Dashboard so customers can manage or cancel subscriptions.
-11. Set all required values in the existing Vercel project's Production Environment Variables, including `NEXT_PUBLIC_APP_URL=https://roomai-prototype-one.vercel.app`. Use matching **test** keys and price IDs first; verify sign-up, purchase, webhook credit update, cancellation and renewal in test mode. After live Stripe onboarding and bank verification, switch the keys and prices to live values, then set `ROOMAI_PUBLIC_BILLING_ENABLED=true` and redeploy. Never mix test and live keys/price IDs. The app validates the six prices before sending customers to Checkout and retains the pricing shown above.
+11. Set credentials securely in a local test environment or a Vercel Preview environment, including `NEXT_PUBLIC_APP_URL` matching that environment. Use **test** Stripe keys, webhook secret and test price IDs together. Set `ROOMAI_PUBLIC_BILLING_ENABLED=true` only in that private test environment, leaving Production false. Verify account creation, a test subscription Checkout for each interval, `invoice.paid` credit fulfillment, cancellation and renewal. Confirm the signed webhook rejects invalid signatures and duplicate deliveries do not refill credits. Only after live onboarding and these tests should matching live credentials be placed in Production and the Production switch changed to true. Do not paste secret keys into chats or commit `.env.local`. The app validates subscription price amounts and intervals before redirecting to Checkout.
 
 ## 3. OpenAI
 1. Create an OpenAI API key.
