@@ -60,7 +60,7 @@ Before accepting payments, run `supabase/billing.sql` in the same Supabase proje
 ## 3. OpenAI
 1. Create an OpenAI API key.
 2. Put it in `OPENAI_API_KEY` in `.env.local`.
-3. The cost-controlled default image model is `gpt-image-1.5` at medium 1536×1024. Override it with `OPENAI_IMAGE_MODEL` only after checking the current model price.
+3. The current image model is `gpt-image-2`. Confirm its current image-editing price and quality settings before public billing; set `OPENAI_IMAGE_MODEL` only after testing the replacement model.
 
 ## 4. Retail affiliate accounts
 Apply separately to Amazon Associates and other retailer/affiliate programs. Put only identifiers/tags in `.env.local`. Retailer payout settings are configured in each retailer/affiliate dashboard, not in this codebase.
