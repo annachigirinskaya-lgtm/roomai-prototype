@@ -77,6 +77,9 @@ export default function LocalResultPage(){
   const [url,setUrl]=useState('');
   const [error,setError]=useState('');
   const [instruction,setInstruction]=useState('');
+  const [queuedEdits,setQueuedEdits]=useState<{label:string;instruction:string}[]>([]);
+  const [itemColor,setItemColor]=useState('');
+  const [compareBeforeAfter,setCompareBeforeAfter]=useState(false);
   const [selectedPreset,setSelectedPreset]=useState('');
   const [editing,setEditing]=useState(false);
   const [editError,setEditError]=useState('');
@@ -110,6 +113,10 @@ export default function LocalResultPage(){
 
   useEffect(()=>()=>{if(productPreviewUrl)URL.revokeObjectURL(productPreviewUrl)},[productPreviewUrl]);
 
+  function addEdit(label:string,value:string){
+    setQueuedEdits(current=>[...current.filter(edit=>edit.label!==label),{label,instruction:value}]);
+    setEditError('');
+  }
   function choosePreset(label:string,value:string){
     setSelectedPreset(label);
     setInstruction(value);
@@ -144,9 +151,11 @@ export default function LocalResultPage(){
 
   function chooseSwap(detail:string){
     if(!selectedItem)return;
-    setSelectedPreset(`Replace ${selectedItem.label}`);
+    const label=`Replace ${selectedItem.label}`;
+    const change=`MANDATORY VISIBLE REPLACEMENT: replace the selected ${selectedItem.category} located around ${selectedItem.x.toFixed(1)}% from the left and ${selectedItem.y.toFixed(1)}% from the top with ${detail}. The replacement must be clearly different in silhouette, material, color or pattern; do not return the original selected object unchanged. Keep it in the same functional area and preserve the exact room, architecture, camera, lighting and every other item unchanged.`;
+    addEdit(label,change);
+    setSelectedPreset(label);
     setUseSelectionMask(true);
-    setInstruction(`MANDATORY VISIBLE REPLACEMENT: replace the selected ${selectedItem.category} located around ${selectedItem.x.toFixed(1)}% from the left and ${selectedItem.y.toFixed(1)}% from the top with ${detail}. The replacement must be clearly different in silhouette, material, color or pattern; do not return the original selected object unchanged. Keep it in the same functional area and preserve the exact room, architecture, camera, lighting and every other item unchanged.`);
   }
 
   function chooseProductImage(file?:File){
@@ -172,13 +181,14 @@ export default function LocalResultPage(){
 
   async function submitEdit(event:FormEvent){
     event.preventDefault();
-    if(!design||!instruction.trim()||editing)return;
+    if(!design||(!instruction.trim()&&queuedEdits.length===0)||editing)return;
     setEditing(true);setEditError('');
     try{
       const form=new FormData();
       form.append('image',design.image,'current-design.png');
-      form.append('instruction',instruction.trim());
-      if(useSelectionMask&&selectedItem){
+      const allInstructions=[...queuedEdits.map(edit=>edit.instruction),...(instruction.trim()?[instruction.trim()]:[])];
+      form.append('instruction',`Apply ALL of these requested edits together to the same room image. Every edit must be clearly visible. Preserve all other objects and fixed architecture:\n${allInstructions.map((change,index)=>`${index+1}. ${change}`).join('\n')}`);
+      if(useSelectionMask&&selectedItem&&queuedEdits.length===1&&!instruction.trim()){
         const mask=await createSelectionMask(design.image,selectedItem.x,selectedItem.y,selectedItem.category);
         form.append('mask',mask,'selection-mask.png');
       }
@@ -189,7 +199,7 @@ export default function LocalResultPage(){
       }
       const revised=await response.blob();
       const id=crypto.randomUUID();
-      await saveLocalDesign({...design,id,createdAt:Date.now(),image:revised,parentId:design.id,rootId:design.rootId||design.id,editInstruction:selectedPreset||instruction.trim()});
+      await saveLocalDesign({...design,id,createdAt:Date.now(),image:revised,parentId:design.id,rootId:design.rootId||design.id,editInstruction:[...queuedEdits.map(edit=>edit.label),...(instruction.trim()?[selectedPreset||instruction.trim()]:[])].join(' + ')});
       window.location.assign(`/local-result?id=${encodeURIComponent(id)}`);
     }catch(reason){
       setEditError(reason instanceof Error?reason.message:'Could not edit this design.');
@@ -199,6 +209,7 @@ export default function LocalResultPage(){
 
   if(error)return <section className="card p-8"><h1 className="text-3xl font-semibold">Saved design</h1><p className="mt-3 text-red-700">{error}</p><Link href="/new-project" className="btn-primary inline-block mt-6">Create another</Link></section>;
   if(!design||!url)return <div className="card p-8">Opening your saved AI design…</div>;
+  const original=versions.find(version=>version.label.startsWith('Original design'))||versions[0];
   const project=design.project as {name?:string;color_palette?:string};
 
   return <div className="space-y-6">
@@ -260,6 +271,7 @@ export default function LocalResultPage(){
     {versions.length>1&&<section className="card p-6 md:p-8">
       <div className="kicker">Saved variations</div>
       <h2 className="text-2xl font-semibold mt-2">Compare your versions</h2>
+      {original&&versions.length>1&&<><button type="button" className="btn-soft mt-3" onClick={()=>setCompareBeforeAfter(v=>!v)}>{compareBeforeAfter?'Hide large comparison':'Compare original vs current side by side'}</button>{compareBeforeAfter&&<div className="grid grid-cols-2 gap-2 mt-4"><div><img src={original.url} alt="Original design" className="w-full aspect-[3/4] object-contain bg-stone-100 rounded-xl"/><p className="font-semibold mt-1 text-sm">Before</p></div><div><img src={url} alt="Current edited design" className="w-full aspect-[3/4] object-contain bg-stone-100 rounded-xl"/><p className="font-semibold mt-1 text-sm">After</p></div></div>}</>}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-5">
         {versions.map(version=><Link key={version.id} href={`/local-result?id=${encodeURIComponent(version.id)}`} className={`overflow-hidden rounded-2xl border-2 ${version.current?'border-black':'border-transparent bg-stone-100'}`}>
           <img src={version.url} alt={version.label} className="aspect-[3/2] w-full object-cover"/>
@@ -271,11 +283,11 @@ export default function LocalResultPage(){
     <section className="card p-6 md:p-8">
       <div className="kicker">Edit this exact design</div>
       <h2 className="text-2xl md:text-3xl font-semibold mt-2">Change interior details</h2>
-      <p className="text-stone-600 mt-2">Choose a ready option or describe one precise change. The current version stays saved.</p>
+      <p className="text-stone-600 mt-2">Add several changes, choose colors, then generate one combined version. The original remains saved.</p>
 
       <h3 className="font-semibold mt-6">Wall panel placement</h3>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-3">
-        {PANEL_LAYOUTS.map(item=><button key={item.label} type="button" onClick={()=>choosePreset(item.label,item.value)} className={`rounded-2xl border px-3 py-3 text-sm font-medium ${selectedPreset===item.label?'border-black bg-black text-white':'border-stone-300 bg-white hover:bg-stone-100'}`}>{item.label}</button>)}
+        {PANEL_LAYOUTS.map(item=><button key={item.label} type="button" onClick={()=>addEdit(item.label,item.value)} className={`rounded-2xl border px-3 py-3 text-sm font-medium ${selectedPreset===item.label?'border-black bg-black text-white':'border-stone-300 bg-white hover:bg-stone-100'}`}>{item.label}</button>)}
       </div>
 
       <h3 className="font-semibold mt-6">Other details</h3>
@@ -283,12 +295,13 @@ export default function LocalResultPage(){
         {DETAIL_EDITS.map(item=><button key={item.label} type="button" onClick={()=>choosePreset(item.label,item.value)} className={`rounded-full border px-4 py-2 text-sm font-medium ${selectedPreset===item.label?'border-black bg-black text-white':'border-stone-300 bg-white hover:bg-stone-100'}`}>{item.label}</button>)}
       </div>
 
+      {queuedEdits.length>0&&<div className="mt-5 rounded-2xl bg-stone-100 p-4"><h3 className="font-semibold">Changes to apply together</h3>{queuedEdits.map((edit,index)=><div key={edit.label+index} className="flex justify-between items-center gap-2 py-2 text-sm"><span>{edit.label}</span><button type="button" className="underline" onClick={()=>setQueuedEdits(items=>items.filter((_,i)=>i!==index))}>Remove</button></div>)}</div>}
       <form onSubmit={submitEdit} className="mt-6 space-y-3">
         <label htmlFor="edit-instruction" className="block font-medium">Your change</label>
         <textarea id="edit-instruction" value={instruction} onChange={event=>{setInstruction(event.target.value);setSelectedPreset('');setUseSelectionMask(false)}} maxLength={600} rows={4} className="w-full rounded-2xl border border-stone-300 bg-white p-4" placeholder="Example: Keep the panel only on the left side and make its edge softly curved with warm LED light. Change nothing else."/>
         {editError&&<p className="text-sm text-red-700">{editError}</p>}
-        <button type="submit" disabled={editing||!instruction.trim()} className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-50">{editing?'Editing this detail…':'Generate edited version'}</button>
-        <p className="text-center text-xs text-stone-500">One option creates one new AI image. Your current image remains saved.</p>
+        <button type="submit" disabled={editing||(!instruction.trim()&&queuedEdits.length===0)} className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-50">{editing?'Editing this detail…':'Generate edited version'}</button>
+        <p className="text-center text-xs text-stone-500">All selected changes create one new AI image. Your current image remains saved.</p>
       </form>
     </section>
 
