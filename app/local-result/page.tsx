@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { FormEvent, MouseEvent, useEffect, useState } from 'react';
 import { getLocalDesign, getLocalDesigns, saveLocalDesign, type LocalDesign } from '@/lib/local-designs';
+import BetaFeedback from '@/components/BetaFeedback';
 
 type DesignVersion={id:string;label:string;url:string;current:boolean};
 type SelectedItem={category:string;label:string;x:number;y:number;query:string;storeLinks:{store:string;url:string}[]};
@@ -295,5 +296,6 @@ export default function LocalResultPage(){
       <a href={url} download={`roomai-${design.style.toLowerCase().replaceAll(' ','-')}.png`} className="btn-primary text-center">Save image to iPhone</a>
       <Link href="/new-project" className="btn-soft text-center">Create another design</Link>
     </div>
+    <BetaFeedback context={`Saved ${design.style} design`}/>
   </div>;
 }
