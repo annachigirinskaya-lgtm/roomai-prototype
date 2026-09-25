@@ -203,7 +203,7 @@ export default function LocalResultPage(){
   return <div className="space-y-6">
     <section className="card overflow-hidden">
       <div className="p-6 md:p-8">
-        <div className="kicker">Saved on this device · AI-generated</div>
+        <div className="kicker">Saved on this device · AI-generated</div><Link href="/compare" className="inline-block mt-3 underline font-semibold">← Back to comparison</Link>
         <h1 className="text-3xl md:text-5xl font-semibold mt-2">{project.name||'My room'}</h1>
         <p className="text-stone-600 mt-3">{design.style} · {project.color_palette||'Selected palette'}</p>
         {design.editInstruction&&<p className="mt-3 text-sm text-stone-500">Edited version: {design.editInstruction}</p>}
