@@ -1,24 +1,6 @@
 import Link from 'next/link';
-
-export default function Home() {
-  return (
-    <main style={{ maxWidth: 1120, margin: '0 auto', padding: 'clamp(10px,2vw,22px)' }}>
-      <section style={{ position: 'relative', height: 'min(79svh,850px)', minHeight: 510, overflow: 'hidden', borderRadius: 24, background: '#241b16' }}>
-        {/* The supplied hero artwork already includes its headline and a drawn button.
-            Crop the lower artwork so the drawn button is never visible. */}
-        <img src="/roomai-hero.png" alt="Elegant living room interior" style={{
-          position: 'absolute', top: 0, left: 0, width: '100%', height: '180%',
-          objectFit: 'cover', objectPosition: 'center top'
-        }} />
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg,transparent 45%,rgba(24,18,15,.18) 65%,rgba(24,18,15,.86) 100%)', pointerEvents: 'none' }} />
-        <Link href="/new-project" style={{
-          position: 'absolute', bottom: '5%', left: '50%', transform: 'translateX(-50%)',
-          display: 'block', boxSizing: 'border-box', width: 'min(88%,370px)',
-          padding: '17px 20px', borderRadius: 40, background: '#fff', color: '#17120f',
-          fontSize: 18, fontWeight: 700, textAlign: 'center', textDecoration: 'none',
-          boxShadow: '0 8px 25px #0006', whiteSpace: 'nowrap'
-        }}>Start designing ✨</Link>
-      </section>
-    </main>
-  );
-}
+export default function Home(){return <main style={{maxWidth:1120,margin:'0 auto',padding:'12px'}}><section style={{position:'relative',height:'min(76svh,760px)',minHeight:510,overflow:'hidden',borderRadius:26,background:'#3d3026'}}>
+<div style={{position:'absolute',inset:0,backgroundImage:"linear-gradient(180deg,rgba(27,20,16,.83) 0%,rgba(27,20,16,.15) 33%,transparent 55%,rgba(27,20,16,.92) 100%),url('/roomai-hero.png')",backgroundSize:'cover,auto 150%',backgroundPosition:'center,center 39%',backgroundRepeat:'no-repeat'}}/>
+<div style={{position:'absolute',top:30,left:12,right:12,textAlign:'center',color:'white'}}><h1 style={{fontSize:'clamp(32px,7vw,60px)',letterSpacing:'.17em',fontWeight:500}}>AI DESIGN</h1><p style={{letterSpacing:'.19em',fontSize:'clamp(11px,2.5vw,16px)',marginTop:6}}>ONE ROOM. UP TO SIX STYLES.</p></div>
+<Link href="/new-project" style={{position:'absolute',bottom:26,left:'8%',width:'84%',padding:'17px 10px',boxSizing:'border-box',borderRadius:50,background:'white',color:'#17120f',fontSize:18,fontWeight:700,textAlign:'center',textDecoration:'none'}}>Start designing ✨</Link>
+</section></main>}
