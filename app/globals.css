@@ -42,3 +42,10 @@ body{background:#f7f4ef;color:#181818}.shell{@apply max-w-7xl mx-auto px-4 md:px
 .split-compare .compare-pane .p-3{padding:.4rem .65rem;font-size:.85rem}
 .split-compare .compare-overlay-nav{inset:38% .3rem auto!important}
 }
+
+/* Compact translucent navigation on the lower comparison image. */
+@media(max-width:767px){
+.split-compare .compare-overlay-nav{inset:43% .12rem auto!important}
+.split-compare .compare-overlay-nav button{width:1.75rem;height:2.25rem;border-radius:.7rem;background:rgba(255,255,255,.58);backdrop-filter:blur(4px);box-shadow:0 1px 3px rgba(0,0,0,.14);font-size:1.55rem;color:#171717;touch-action:manipulation}
+.split-compare .compare-overlay-nav button:active{background:rgba(255,255,255,.88)}
+}
