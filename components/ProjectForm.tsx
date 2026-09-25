@@ -20,7 +20,7 @@ export default function ProjectForm(){
   const [error,setError]=useState('');
   const [file,setFile]=useState<File|null>(null);
   const [preview,setPreview]=useState('');
-  const [selected,setSelected]=useState<string[]>(['Modern','Luxury','Japandi','Old Money']);
+  const [selected,setSelected]=useState<string[]>(['Modern','Luxury','Boho','Old Money','Hollywood Regency','Japandi']);
   const [results,setResults]=useState<Result[]>([]);
   const [projectId,setProjectId]=useState('');
   const [pinned,setPinned]=useState('Modern');
@@ -74,7 +74,7 @@ export default function ProjectForm(){
       const batch=styles.slice(i,i+2);
       batch.forEach(style=>setStylePhase(style,'generating'));
       const generated=await Promise.allSettled(batch.map(async style=>{
-        const body=new FormData();body.append('image',uploadFile);body.append('project',JSON.stringify({...form,budget:Number(form.budget),style,source_image_url:''}));
+        const body=new FormData();body.append('image',uploadFile);body.append('project',JSON.stringify({...form,budget:Number(form.budget),style,source_image_url:''}));body.append('comparisonStyles',JSON.stringify(selected));
         const response=await fetch('/api/designs/quick-generate',{method:'POST',headers:betaToken.current?{'x-roomai-beta-token':betaToken.current}:{},body});
         if(!response.ok){let message='Could not generate this style.';try{message=(await response.json()).error||message}catch{}throw new Error(message)}
         const image=await response.blob();const id=crypto.randomUUID();
