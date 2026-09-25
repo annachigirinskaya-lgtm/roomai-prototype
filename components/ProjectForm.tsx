@@ -119,7 +119,7 @@ export default function ProjectForm(){
         if(!completed.length&&failures.some(x=>x.message.includes('OpenAI is not connected')))throw new Error('OpenAI generation is not connected in Vercel yet. Add OPENAI_API_KEY in Environment Variables, then redeploy.');
         if(!completed.length)throw new Error(failures[0]?.message||'No AI designs were generated.');
         setResults(completed);sessionStorage.setItem('roomai-active-comparison',JSON.stringify(completed.map(({id,style})=>({id,style}))));setPinned(completed[0].style);setStep(2);window.scrollTo({top:0,behavior:'smooth'});
-        if(failures.length)setError(`Generated ${completed.length} of ${selected.length} styles. Retry the failed ${failures.length===1?'style':'styles'} below.`);
+        if(failures.length)setError(`Generated ${completed.length} of ${selected.length} styles. ${failures.map(({style,message})=>`${style}: ${message}`).join(' | ')}. Check these errors before retrying.`);
         return;
       }
       selected.forEach(style=>setStylePhase(style,'generating'));
@@ -143,7 +143,7 @@ export default function ProjectForm(){
       const uploadFile=preview?dataUrlToFile(preview,'room.jpg'):file;
       const {completed,failures}=await generateLocalStyles(failedStyles,uploadFile);
       if(completed.length&&!pinnedResult)setPinned(completed[0].style);
-      if(failures.length)setError(`${failures.length} ${failures.length===1?'style still needs':'styles still need'} another try.`);
+      if(failures.length)setError(failures.map(({style,message})=>`${style}: ${message}`).join(' | '));
     }catch(reason){setError(reason instanceof Error?reason.message:'Could not retry these styles.')}finally{setBusy(false)}
   }
   async function chooseWinner(result:Result){
