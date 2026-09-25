@@ -43,7 +43,8 @@ export async function POST(req:NextRequest){
     const parsed=JSON.parse(raw) as ProjectInput;
     if(!STYLES.includes(parsed.style as never))return NextResponse.json({error:'Choose a valid interior style.'},{status:400});
     const project:ProjectInput={...parsed,budget:Number(parsed.budget)||1500,source_image_url:''};
-    const output=await generateFromRoom(Buffer.from(await image.arrayBuffer()),image.type,project,[]);
+    const comparisonStyles=typeof data.get('comparisonStyles')==='string'?JSON.parse(data.get('comparisonStyles') as string):[];
+    const output=await generateFromRoom(Buffer.from(await image.arrayBuffer()),image.type,project,[],Array.isArray(comparisonStyles)?comparisonStyles.filter((s:unknown)=>typeof s==='string'&&STYLES.includes(s as never)).slice(0,6):[]);
     return new Response(new Uint8Array(output),{status:200,headers:{'content-type':'image/png','cache-control':'private, no-store','x-roomai-style':encodeURIComponent(project.style)}});
   }catch(error:any){
     console.error('Quick generation failed',error);
