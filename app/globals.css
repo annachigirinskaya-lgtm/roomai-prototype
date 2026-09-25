@@ -49,3 +49,10 @@ body{background:#f7f4ef;color:#181818}.shell{@apply max-w-7xl mx-auto px-4 md:px
 .split-compare .compare-overlay-nav button{width:1.75rem;height:2.25rem;border-radius:.7rem;background:rgba(255,255,255,.58);backdrop-filter:blur(4px);box-shadow:0 1px 3px rgba(0,0,0,.14);font-size:1.55rem;color:#171717;touch-action:manipulation}
 .split-compare .compare-overlay-nav button:active{background:rgba(255,255,255,.88)}
 }
+
+/* Clean cover in the upload area; no overlapping hero copy. */
+.room-upload:not(.has-image){border:0;background:#231b15;min-height:440px}
+.room-cover{position:absolute;inset:0;background:linear-gradient(180deg,rgba(12,9,7,.35),transparent 35%,transparent 60%,rgba(12,9,7,.55)),url('/roomai-hero-clean.webp') center/cover no-repeat;display:flex;align-items:center;justify-content:space-between;flex-direction:column;padding:2rem 1rem;color:#fff;text-align:center}
+.room-cover-title{font-size:clamp(1.5rem,6vw,2.8rem);letter-spacing:.18em;font-weight:400;line-height:1.2;text-shadow:0 2px 12px #0009}
+.room-cover-title span{display:block;font-size:.58rem;letter-spacing:.24em;margin-top:.5rem;font-weight:600}
+.room-cover-upload{margin-top:auto;background:#fff;color:#181818;border-radius:999px;padding:.85rem 1.5rem;font-size:1rem;font-weight:700;box-shadow:0 4px 22px #0004}
