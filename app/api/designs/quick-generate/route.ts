@@ -22,12 +22,13 @@ function rateLimited(req:NextRequest){
 }
 
 export async function POST(req:NextRequest){
-  const betaMode=process.env.NEXT_PUBLIC_ROOMAI_BETA_MODE==='true';
-  if(betaMode){
+  const protectedBeta=process.env.NEXT_PUBLIC_ROOMAI_BETA_MODE==='true';
+  const previewBeta=process.env.VERCEL_ENV==='preview';
+  if(protectedBeta){
     const expectedToken=process.env.ROOMAI_BETA_ACCESS_TOKEN;
     if(!expectedToken)return NextResponse.json({error:'Private beta access is not configured yet.'},{status:503});
     if(req.headers.get('x-roomai-beta-token')!==expectedToken)return NextResponse.json({error:'This private beta link is not valid. Ask for a new invitation link.'},{status:401});
-  }else if(process.env.NEXT_PUBLIC_SUPABASE_URL&&process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY){
+  }else if(!previewBeta&&process.env.NEXT_PUBLIC_SUPABASE_URL&&process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY){
     return NextResponse.json({error:'Please sign in and use your account credits to generate designs.'},{status:403});
   }
   if(!process.env.OPENAI_API_KEY)return NextResponse.json({error:'OpenAI is not connected in Vercel yet. Add OPENAI_API_KEY in Environment Variables and redeploy.'},{status:503});

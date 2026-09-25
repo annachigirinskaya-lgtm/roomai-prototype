@@ -1,15 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 const BETA_MODE=process.env.NEXT_PUBLIC_ROOMAI_BETA_MODE==='true';
 
 export default function BetaFeedback({context}:{context:string}){
+  const [visible,setVisible]=useState(BETA_MODE);
   const [rating,setRating]=useState(0);
   const [note,setNote]=useState('');
   const [status,setStatus]=useState('');
 
-  if(!BETA_MODE)return null;
+  useEffect(()=>{if(window.location.hostname.includes('-git-')&&window.location.hostname.endsWith('.vercel.app'))setVisible(true)},[]);
+
+  if(!visible)return null;
 
   async function sendFeedback(){
     const text=[
