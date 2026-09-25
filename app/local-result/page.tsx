@@ -305,6 +305,7 @@ export default function LocalResultPage(){
       </form>
     </section>
 
+    <Link href="/new-project" className="btn-soft block text-center">← Back to six-style comparison</Link>
     <div className="grid sm:grid-cols-2 gap-3">
       <a href={url} download={`roomai-${design.style.toLowerCase().replaceAll(' ','-')}.png`} className="btn-primary text-center">Save image to iPhone</a>
       <Link href="/new-project" className="btn-soft text-center">Create another design</Link>
