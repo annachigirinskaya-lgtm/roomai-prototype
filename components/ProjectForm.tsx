@@ -83,7 +83,7 @@ export default function ProjectForm(){
     try{const response=await fetch('/api/projects',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({projectId,style:result.style})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Could not save your choice.');router.push(`/project/${projectId}`);router.refresh()}catch(e:any){setError(e.message)}finally{setBusy(false)}
   }
 
-  return <div className="space-y-5">
+  return <div className="space-y-5"><a href="/compare" className="inline-block underline text-sm font-semibold">Compare saved designs →</a>
     <div className="flow-progress">{[1,2].map(n=><i key={n} className={n<=step?'on':''}/>)}</div>
     {step===1&&<section className="card p-5 md:p-7 space-y-6">
       {LOCAL_MODE&&<div className="notice"><b>Prototype AI mode:</b> generated designs are based on your uploaded room and saved privately on this device. Connect Supabase later to sync them across devices.</div>}
