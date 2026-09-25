@@ -8,7 +8,7 @@ import BetaFeedback from '@/components/BetaFeedback';
 
 const BETA_CONFIGURED=process.env.NEXT_PUBLIC_ROOMAI_BETA_MODE==='true';
 const ACCOUNT_MODE=Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL&&process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
-const MIN_STYLES=4,MAX_STYLES=6;
+const MIN_STYLES=1,MAX_STYLES=6;
 type Result={id:string;style:string;generated_image_url:string;local?:boolean};
 type GenerationPhase='waiting'|'generating'|'done'|'failed';
 type GenerationState=Record<string,{phase:GenerationPhase;message?:string}>;
@@ -20,7 +20,7 @@ export default function ProjectForm(){
   const [error,setError]=useState('');
   const [file,setFile]=useState<File|null>(null);
   const [preview,setPreview]=useState('');
-  const [selected,setSelected]=useState<string[]>(['Modern','Luxury','Boho','Old Money','Hollywood Regency','Japandi']);
+  const [selected,setSelected]=useState<string[]>([]);
   const [results,setResults]=useState<Result[]>([]);
   const [projectId,setProjectId]=useState('');
   const [pinned,setPinned]=useState('Modern');
@@ -109,7 +109,7 @@ export default function ProjectForm(){
   }
   async function generateComparison(){
     if(!file)return setError('Upload a room photo first.');
-    if(selected.length<MIN_STYLES||selected.length>MAX_STYLES)return setError('Choose 4–6 styles.');
+    if(selected.length<MIN_STYLES||selected.length>MAX_STYLES)return setError('Choose 1–6 styles.');
     setBusy(true);setError('');
     sessionStorage.removeItem('roomai-active-comparison');setComparisonRestored(false);setResults([]);setGeneration(Object.fromEntries(selected.map(style=>[style,{phase:'waiting'}])));
     try{
@@ -159,9 +159,9 @@ export default function ProjectForm(){
       <div><h1 className="text-2xl md:text-3xl font-semibold">Upload your room photo</h1><p className="text-stone-600 mt-1 text-sm">Choose up to six styles and compare real AI designs.</p></div>
       <label className={`room-upload ${preview?'has-image':''}`}>{preview?<img src={preview} alt="Uploaded room"/>:<div className="text-center"><div className="text-4xl">＋</div><b>Add your room photo</b><div className="text-sm text-stone-500 mt-1">JPG, PNG, HEIC or WebP · up to 20 MB</div></div>}<input className="sr-only" type="file" accept="image/*" onChange={e=>onFile(e.target.files?.[0]||null)}/>{preview&&<span className="upload-chip">Change photo</span>}</label>
       <div className="grid md:grid-cols-2 gap-4"><Field label="Project name"><input className="input" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></Field><Field label="Room type"><select className="input" value={form.room_type} onChange={e=>setForm({...form,room_type:e.target.value})}>{ROOM_TYPES.map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Color palette"><select className="input" value={form.color_palette} onChange={e=>setForm({...form,color_palette:e.target.value})}>{PALETTES.map(x=><option key={x}>{x}</option>)}</select></Field>{form.color_palette==='Custom'&&<Field label="Your colors"><input className="input" value={form.custom_colors} onChange={e=>setForm({...form,custom_colors:e.target.value})} placeholder="Cream, walnut, olive…"/></Field>}<Field label="Budget ($)"><input className="input" type="number" min="50" step="10" value={form.budget} onFocus={e=>e.currentTarget.select()} onChange={e=>setForm({...form,budget:e.target.value})} placeholder="Enter budget"/></Field><Field label="Keep these items"><textarea className="input min-h-24" value={form.keep_items} onChange={e=>setForm({...form,keep_items:e.target.value})} placeholder="Sofa, flooring, fireplace…"/></Field><Field label="Replace or add"><textarea className="input min-h-24" value={form.replace_items} onChange={e=>setForm({...form,replace_items:e.target.value})} placeholder="Furniture, lighting, curtains…"/></Field></div>
-      <div><div className="flex items-end justify-between gap-3"><div><div className="label mb-1">Choose 4–6 styles</div><p className="text-sm text-stone-500">{selected.length} selected · these photos are style references, not generated results.</p></div><button type="button" className="text-sm underline" onClick={()=>setSelected(STYLES.slice(0,6))}>Select first 6</button></div><div className="style-grid mt-4">{STYLES.map(style=><button type="button" key={style} onClick={()=>toggleStyle(style)} className={`style-card ${selected.includes(style)?'selected':''}`}><img className="style-photo" src={STYLE_META[style].image} alt={`${style} style reference`}/><div className="p-3"><div className="flex items-center justify-between gap-2"><b>{style}</b>{selected.includes(style)&&<span className="check">✓</span>}</div><div className="text-xs text-stone-500 mt-1">{STYLE_META[style].mood}</div><div className="text-[11px] leading-snug text-stone-500 mt-2 line-clamp-3">{STYLE_META[style].guidance}</div><div className="inspiration-label">Style reference</div></div></button>)}</div></div>
+      <div><div className="flex items-end justify-between gap-3"><div><div className="label mb-1">Choose 1–6 styles</div><p className="text-sm text-stone-500">{selected.length} selected · these photos are style references, not generated results.</p></div><button type="button" className="text-sm underline" onClick={()=>setSelected(STYLES.slice(0,6))}>Select first 6</button></div><div className="style-grid mt-4">{STYLES.map(style=><button type="button" key={style} onClick={()=>toggleStyle(style)} className={`style-card ${selected.includes(style)?'selected':''}`}><img className="style-photo" src={STYLE_META[style].image} alt={`${style} style reference`}/><div className="p-3"><div className="flex items-center justify-between gap-2"><b>{style}</b>{selected.includes(style)&&<span className="check">✓</span>}</div><div className="text-xs text-stone-500 mt-1">{STYLE_META[style].mood}</div><div className="text-[11px] leading-snug text-stone-500 mt-2 line-clamp-3">{STYLE_META[style].guidance}</div><div className="inspiration-label">Style reference</div></div></button>)}</div></div>
       {error&&<p className="text-red-700 text-sm" role="alert">{error}</p>}
-      <button type="button" disabled={busy||!betaAccess} className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-50" onClick={generateComparison}>{busy?'Generating and saving your room designs…':`Generate ${selected.length} AI designs`}</button>
+      <button type="button" disabled={busy||!betaAccess||selected.length===0} className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-50" onClick={generateComparison}>{busy?'Generating and saving your room designs…':`Generate ${selected.length} AI designs`}</button>
       {Object.keys(generation).length>0&&<GenerationProgress styles={selected} generation={generation}/>}
       <p className="text-xs text-center text-stone-500">{localMode?'Prototype results are saved on this device. Each selected style creates a real AI edit of your uploaded room.':'Generated results are saved to your project. Free plan: 1 credit per variant; paid plans include standard redesigns.'}</p>
     </section>}
