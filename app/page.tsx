@@ -13,7 +13,7 @@ export default function Home() {
     <div className="space-y-16">
       <section className="lux-hero">
         <Image
-          src="/roomai-hero.png"
+          src="/roomai-hero-clean.webp"
           alt="Warm, modern living room"
           fill
           priority
