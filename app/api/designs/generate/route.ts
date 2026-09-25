@@ -17,7 +17,7 @@ export async function POST(req:NextRequest){
   if(pErr||!project)return NextResponse.json({error:'Project not found'},{status:404});
   const requested=[...new Set(styles)].filter(x=>STYLES.includes(x as never)).slice(0,6);
   const isComparison=requested.length>0;
-  if(isComparison&&requested.length<4)return NextResponse.json({error:'Choose 4–6 styles to compare.'},{status:400});
+  if(isComparison&&requested.length<1)return NextResponse.json({error:'Choose at least one style.'},{status:400});
   const admin=createAdminClient();
   const {data:profile}=await admin.from('profiles').select('*').eq('id',user.id).single();
   const plan=profile?.plan||'free';
