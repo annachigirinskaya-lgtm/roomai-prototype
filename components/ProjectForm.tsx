@@ -3,12 +3,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ROOM_TYPES, STYLES, PALETTES, STYLE_META } from '@/lib/catalog';
 import { useRouter } from 'next/navigation';
-import { saveLocalDesign } from '@/lib/local-designs';
+import { saveLocalDesign, getLocalDesign } from '@/lib/local-designs';
 import BetaFeedback from '@/components/BetaFeedback';
 
 const BETA_CONFIGURED=process.env.NEXT_PUBLIC_ROOMAI_BETA_MODE==='true';
 const ACCOUNT_MODE=Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL&&process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
-const MIN_STYLES=4,MAX_STYLES=6;
+const MIN_STYLES=1,MAX_STYLES=6;
 type Result={id:string;style:string;generated_image_url:string;local?:boolean};
 type GenerationPhase='waiting'|'generating'|'done'|'failed';
 type GenerationState=Record<string,{phase:GenerationPhase;message?:string}>;
@@ -20,23 +20,35 @@ export default function ProjectForm(){
   const [error,setError]=useState('');
   const [file,setFile]=useState<File|null>(null);
   const [preview,setPreview]=useState('');
-  const [selected,setSelected]=useState<string[]>(['Modern','Luxury','Japandi','Old Money']);
+  const [selected,setSelected]=useState<string[]>([]);
   const [results,setResults]=useState<Result[]>([]);
   const [projectId,setProjectId]=useState('');
   const [pinned,setPinned]=useState('Modern');
   const [compareIndex,setCompareIndex]=useState(0);
   const [compareMode,setCompareMode]=useState<'pin'|'grid'>('grid');
+  const [comparisonRestored,setComparisonRestored]=useState(false);
   const [generation,setGeneration]=useState<GenerationState>({});
   const [betaMode,setBetaMode]=useState(BETA_CONFIGURED);
   const [betaAccess,setBetaAccess]=useState(!BETA_CONFIGURED);
   const objectUrls=useRef<string[]>([]);
   const betaToken=useRef('');
-  const [form,setForm]=useState({name:'My room',room_type:'Living Room',style:'Modern',color_palette:'Warm White',custom_colors:'',budget:1500,budget_mode:'balanced',keep_items:'',replace_items:'',notes:''});
+  const [form,setForm]=useState({name:'My room',room_type:'Living Room',style:'Modern',color_palette:'Warm White',custom_colors:'',budget:'1500',budget_mode:'balanced',keep_items:'',replace_items:'',notes:''});
   const alternatives=useMemo(()=>results.filter(x=>x.style!==pinned),[results,pinned]);
   const pinnedResult=results.find(x=>x.style===pinned)||results[0];
   const compareResult=alternatives[Math.min(compareIndex,Math.max(0,alternatives.length-1))];
   const failedStyles=selected.filter(style=>generation[style]?.phase==='failed');
   const localMode=betaMode||!ACCOUNT_MODE;
+
+  useEffect(()=>{
+    const saved=sessionStorage.getItem('roomai-active-comparison');
+    if(saved){try{
+      const items=JSON.parse(saved) as {id:string;style:string}[];
+      Promise.all(items.map(async entry=>{const item=await getLocalDesign(entry.id);if(!item)return null;const generated_image_url=URL.createObjectURL(item.image);objectUrls.current.push(generated_image_url);return {...entry,generated_image_url,local:true} as Result})).then(restored=>{
+        const ready=restored.filter((item):item is Result=>Boolean(item));
+        if(ready.length){setResults(ready);setPinned(ready[0].style);setSelected(ready.map(item=>item.style));setStep(2);setComparisonRestored(true)}
+      }).catch(()=>{});
+    }catch{sessionStorage.removeItem('roomai-active-comparison')}}
+  },[]);
 
   useEffect(()=>{
     const automaticPreview=window.location.hostname.includes('-git-')&&window.location.hostname.endsWith('.vercel.app');
@@ -74,7 +86,7 @@ export default function ProjectForm(){
       const batch=styles.slice(i,i+2);
       batch.forEach(style=>setStylePhase(style,'generating'));
       const generated=await Promise.allSettled(batch.map(async style=>{
-        const body=new FormData();body.append('image',uploadFile);body.append('project',JSON.stringify({...form,budget:Number(form.budget),style,source_image_url:''}));
+        const body=new FormData();body.append('image',uploadFile);body.append('project',JSON.stringify({...form,budget:Number(form.budget),style,source_image_url:''}));body.append('comparisonStyles',JSON.stringify(selected));
         const response=await fetch('/api/designs/quick-generate',{method:'POST',headers:betaToken.current?{'x-roomai-beta-token':betaToken.current}:{},body});
         if(!response.ok){let message='Could not generate this style.';try{message=(await response.json()).error||message}catch{}throw new Error(message)}
         const image=await response.blob();const id=crypto.randomUUID();
@@ -97,17 +109,17 @@ export default function ProjectForm(){
   }
   async function generateComparison(){
     if(!file)return setError('Upload a room photo first.');
-    if(selected.length<MIN_STYLES||selected.length>MAX_STYLES)return setError('Choose 4–6 styles.');
+    if(selected.length<MIN_STYLES||selected.length>MAX_STYLES)return setError('Choose 1–6 styles.');
     setBusy(true);setError('');
-    setResults([]);setGeneration(Object.fromEntries(selected.map(style=>[style,{phase:'waiting'}])));
+    sessionStorage.removeItem('roomai-active-comparison');setComparisonRestored(false);setResults([]);setGeneration(Object.fromEntries(selected.map(style=>[style,{phase:'waiting'}])));
     try{
       const uploadFile=preview?dataUrlToFile(preview,'room.jpg'):file;
       if(localMode){
         const {completed,failures}=await generateLocalStyles(selected,uploadFile);
         if(!completed.length&&failures.some(x=>x.message.includes('OpenAI is not connected')))throw new Error('OpenAI generation is not connected in Vercel yet. Add OPENAI_API_KEY in Environment Variables, then redeploy.');
         if(!completed.length)throw new Error(failures[0]?.message||'No AI designs were generated.');
-        setResults(completed);setPinned(completed[0].style);setStep(2);window.scrollTo({top:0,behavior:'smooth'});
-        if(failures.length)setError(`Generated ${completed.length} of ${selected.length} styles. Retry the failed ${failures.length===1?'style':'styles'} below.`);
+        setResults(completed);sessionStorage.setItem('roomai-active-comparison',JSON.stringify(completed.map(({id,style})=>({id,style}))));setPinned(completed[0].style);setStep(2);window.scrollTo({top:0,behavior:'smooth'});
+        if(failures.length)setError(`Generated ${completed.length} of ${selected.length} styles. ${failures.map(({style,message})=>`${style}: ${message}`).join(' | ')}. Check these errors before retrying.`);
         return;
       }
       selected.forEach(style=>setStylePhase(style,'generating'));
@@ -131,7 +143,7 @@ export default function ProjectForm(){
       const uploadFile=preview?dataUrlToFile(preview,'room.jpg'):file;
       const {completed,failures}=await generateLocalStyles(failedStyles,uploadFile);
       if(completed.length&&!pinnedResult)setPinned(completed[0].style);
-      if(failures.length)setError(`${failures.length} ${failures.length===1?'style still needs':'styles still need'} another try.`);
+      if(failures.length)setError(failures.map(({style,message})=>`${style}: ${message}`).join(' | '));
     }catch(reason){setError(reason instanceof Error?reason.message:'Could not retry these styles.')}finally{setBusy(false)}
   }
   async function chooseWinner(result:Result){
@@ -143,20 +155,21 @@ export default function ProjectForm(){
   return <div className="space-y-5">
     <div className="flow-progress">{[1,2].map(n=><i key={n} className={n<=step?'on':''}/>)}</div>
     {step===1&&<section className="card p-5 md:p-7 space-y-6">
-      {localMode&&<div className="notice"><b>{betaMode?'Private beta:':'Prototype AI mode:'}</b> generated designs are based on your uploaded room and saved privately on this device.{betaMode?' No payment is required during this test.':' Connect Supabase later to sync them across devices.'}</div>}
-      <div><div className="kicker">01 · Your room</div><h2 className="text-3xl font-semibold mt-1">Upload once. Generate 4–6 real versions.</h2><p className="text-stone-600 mt-2">Every AI variant uses your uploaded room as the image input and preserves its architecture.</p></div>
-      <label className={`room-upload ${preview?'has-image':''}`}>{preview?<img src={preview} alt="Uploaded room"/>:<div className="text-center"><div className="text-4xl">＋</div><b>Add your room photo</b><div className="text-sm text-stone-500 mt-1">JPG, PNG, HEIC or WebP · up to 20 MB</div></div>}<input className="sr-only" type="file" accept="image/*" onChange={e=>onFile(e.target.files?.[0]||null)}/>{preview&&<span className="upload-chip">Change photo</span>}</label>
-      <div className="grid md:grid-cols-2 gap-4"><Field label="Project name"><input className="input" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></Field><Field label="Room type"><select className="input" value={form.room_type} onChange={e=>setForm({...form,room_type:e.target.value})}>{ROOM_TYPES.map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Color palette"><select className="input" value={form.color_palette} onChange={e=>setForm({...form,color_palette:e.target.value})}>{PALETTES.map(x=><option key={x}>{x}</option>)}</select></Field>{form.color_palette==='Custom'&&<Field label="Your colors"><input className="input" value={form.custom_colors} onChange={e=>setForm({...form,custom_colors:e.target.value})} placeholder="Cream, walnut, olive…"/></Field>}<Field label="Budget ($)"><input className="input" type="number" min="50" step="10" value={form.budget} onChange={e=>setForm({...form,budget:Number(e.target.value)})}/></Field><Field label="Keep these items"><textarea className="input min-h-24" value={form.keep_items} onChange={e=>setForm({...form,keep_items:e.target.value})} placeholder="Sofa, flooring, fireplace…"/></Field><Field label="Replace or add"><textarea className="input min-h-24" value={form.replace_items} onChange={e=>setForm({...form,replace_items:e.target.value})} placeholder="Furniture, lighting, curtains…"/></Field></div>
-      <div><div className="flex items-end justify-between gap-3"><div><div className="label mb-1">Choose 4–6 styles</div><p className="text-sm text-stone-500">{selected.length} selected · these photos are style references, not generated results.</p></div><button type="button" className="text-sm underline" onClick={()=>setSelected(STYLES.slice(0,6))}>Select first 6</button></div><div className="style-grid mt-4">{STYLES.map(style=><button type="button" key={style} onClick={()=>toggleStyle(style)} className={`style-card ${selected.includes(style)?'selected':''}`}><img className="style-photo" src={STYLE_META[style].image} alt={`${style} style reference`}/><div className="p-3"><div className="flex items-center justify-between gap-2"><b>{style}</b>{selected.includes(style)&&<span className="check">✓</span>}</div><div className="text-xs text-stone-500 mt-1">{STYLE_META[style].mood}</div><div className="text-[11px] leading-snug text-stone-500 mt-2 line-clamp-3">{STYLE_META[style].guidance}</div><div className="inspiration-label">Style reference</div></div></button>)}</div></div>
+
+      <div><h1 className="text-2xl md:text-3xl font-semibold">Upload your room photo</h1><p className="text-stone-600 mt-1 text-sm">Choose up to six styles and compare real AI designs.</p></div>
+      <label className={`room-upload ${preview?'has-image':''}`}>{preview?<img src={preview} alt="Uploaded room"/>:<div className="room-cover"><div className="room-cover-title">AI DESIGN<span>ONE ROOM · UP TO SIX STYLES</span></div><div className="room-cover-upload"><span>＋ Upload your room photo</span></div></div>}<input className="sr-only" type="file" accept="image/*" onChange={e=>onFile(e.target.files?.[0]||null)}/>{preview&&<span className="upload-chip">Change photo</span>}</label>
+      <div className="grid md:grid-cols-2 gap-4"><Field label="Project name"><input className="input" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></Field><Field label="Room type"><select className="input" value={form.room_type} onChange={e=>setForm({...form,room_type:e.target.value})}>{ROOM_TYPES.map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Color palette"><select className="input" value={form.color_palette} onChange={e=>setForm({...form,color_palette:e.target.value})}>{PALETTES.map(x=><option key={x}>{x}</option>)}</select></Field>{form.color_palette==='Custom'&&<Field label="Your colors"><input className="input" value={form.custom_colors} onChange={e=>setForm({...form,custom_colors:e.target.value})} placeholder="Cream, walnut, olive…"/></Field>}<Field label="Budget ($)"><input className="input" type="number" min="50" step="10" value={form.budget} onFocus={e=>e.currentTarget.select()} onChange={e=>setForm({...form,budget:e.target.value})} placeholder="Enter budget"/></Field><Field label="Keep these items"><textarea className="input min-h-24" value={form.keep_items} onChange={e=>setForm({...form,keep_items:e.target.value})} placeholder="Sofa, flooring, fireplace…"/></Field><Field label="Replace or add"><textarea className="input min-h-24" value={form.replace_items} onChange={e=>setForm({...form,replace_items:e.target.value})} placeholder="Furniture, lighting, curtains…"/></Field></div>
+      <div><div className="flex items-end justify-between gap-3"><div><div className="label mb-1">Choose 1–6 styles</div><p className="text-sm text-stone-500">{selected.length} selected · these photos are style references, not generated results.</p></div><button type="button" className="text-sm underline" onClick={()=>setSelected(STYLES.slice(0,6))}>Select first 6</button></div><div className="style-grid mt-4">{STYLES.map(style=><button type="button" key={style} onClick={()=>toggleStyle(style)} className={`style-card ${selected.includes(style)?'selected':''}`}><img className="style-photo" src={STYLE_META[style].image} alt={`${style} style reference`}/><div className="p-3"><div className="flex items-center justify-between gap-2"><b>{style}</b>{selected.includes(style)&&<span className="check">✓</span>}</div><div className="text-xs text-stone-500 mt-1">{STYLE_META[style].mood}</div><div className="text-[11px] leading-snug text-stone-500 mt-2 line-clamp-3">{STYLE_META[style].guidance}</div><div className="inspiration-label">Style reference</div></div></button>)}</div></div>
       {error&&<p className="text-red-700 text-sm" role="alert">{error}</p>}
-      <button type="button" disabled={busy||!betaAccess} className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-50" onClick={generateComparison}>{busy?'Generating and saving your room designs…':`Generate ${selected.length} AI designs`}</button>
+      <button type="button" disabled={busy||!betaAccess||selected.length===0} className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-50" onClick={generateComparison}>{busy?'Generating and saving your room designs…':`Generate ${selected.length} AI designs`}</button>
       {Object.keys(generation).length>0&&<GenerationProgress styles={selected} generation={generation}/>}
       <p className="text-xs text-center text-stone-500">{localMode?'Prototype results are saved on this device. Each selected style creates a real AI edit of your uploaded room.':'Generated results are saved to your project. Free plan: 1 credit per variant; paid plans include standard redesigns.'}</p>
     </section>}
     {step===2&&<section className="card p-5 md:p-7 space-y-6">
-      <div className="flex items-start justify-between gap-3"><div><div className="kicker">02 · Compare</div><h2 className="text-3xl font-semibold mt-1">Choose the version that feels right.</h2><p className="text-stone-600 mt-2">These AI designs were generated from your uploaded room and saved {localMode?'on this device':'with your project'}.</p></div><button className="btn-soft text-sm" onClick={()=>setStep(1)}>Edit</button></div>
+      <div className="flex items-start justify-between gap-3"><div><div className="kicker">02 · Compare</div><h2 className="text-3xl font-semibold mt-1">Choose the version that feels right.</h2><p className="text-stone-600 mt-2">Tap a design to pin it, compare with the others, then choose one to edit.</p></div><button className="btn-soft text-sm" onClick={()=>{setStep(1);sessionStorage.removeItem('roomai-active-comparison')}}>New comparison</button></div>
+      {comparisonRestored&&<p className="text-sm text-green-800">Your previous comparison was restored. Choose a style to pin or continue comparing.</p>}
       <div className="compare-tabs"><button className={compareMode==='grid'?'active':''} onClick={()=>setCompareMode('grid')}>4–6 grid</button><button className={compareMode==='pin'?'active':''} onClick={()=>setCompareMode('pin')}>Pin & compare</button></div>
-      {compareMode==='grid'?<div className="compare-grid">{results.map(result=><button key={result.id} className="compare-grid-card" onClick={()=>chooseWinner(result)} disabled={busy}><ResultImage result={result}/><div className="p-3 text-left"><b>{result.style}</b><div className="text-xs text-stone-500 mt-1">Tap to choose and save</div></div></button>)}</div>:<div className="space-y-4"><div className="split-compare">{pinnedResult&&<ResultPane title="Pinned" result={pinnedResult}/>} {compareResult&&<ResultPane title={`${compareIndex+1} of ${alternatives.length}`} result={compareResult}/>}</div><div className="flex items-center justify-between gap-3"><button className="btn-soft" onClick={()=>setCompareIndex(i=>(i-1+alternatives.length)%alternatives.length)}>←</button><div className="text-sm text-center"><b>{pinnedResult?.style}</b> vs <b>{compareResult?.style}</b></div><button className="btn-soft" onClick={()=>setCompareIndex(i=>(i+1)%alternatives.length)}>→</button></div><div className="grid grid-cols-2 gap-3"><button className="btn-primary" onClick={()=>pinnedResult&&chooseWinner(pinnedResult)}>Choose {pinnedResult?.style}</button><button className="btn-primary" onClick={()=>compareResult&&chooseWinner(compareResult)}>Choose {compareResult?.style}</button></div><div className="flex gap-2 overflow-x-auto pb-2">{results.map(result=><button key={result.id} className={`chip whitespace-nowrap ${result.style===pinned?'bg-black text-white':''}`} onClick={()=>{setPinned(result.style);setCompareIndex(0)}}>{result.style}</button>)}</div></div>}
+      {compareMode==='grid'?<div className="compare-grid">{results.map(result=><button key={result.id} className="compare-grid-card" onClick={()=>{setPinned(result.style);setCompareIndex(0);setCompareMode('pin')}} disabled={busy}><ResultImage result={result}/><div className="p-3 text-left"><b>{result.style}</b><div className="text-xs text-stone-500 mt-1">Tap to pin and compare</div></div></button>)}</div>:<div className="space-y-4"><div className="split-compare">{pinnedResult&&<ResultPane title="Pinned" result={pinnedResult}/>} {compareResult&&<div className="relative min-w-0"><ResultPane title={`${compareIndex+1} of ${alternatives.length}`} result={compareResult}/><div className="compare-overlay-nav"><button type="button" aria-label="Previous style" disabled={!alternatives.length} onClick={()=>setCompareIndex(i=>(i-1+alternatives.length)%alternatives.length)}>‹</button><button type="button" aria-label="Next style" disabled={!alternatives.length} onClick={()=>setCompareIndex(i=>(i+1)%alternatives.length)}>›</button></div></div>}</div><div className="text-sm text-center font-semibold">{pinnedResult?.style} vs {compareResult?.style}</div><div className="grid grid-cols-2 gap-3"><button className="btn-primary" onClick={()=>pinnedResult&&chooseWinner(pinnedResult)}>Choose {pinnedResult?.style}</button><button className="btn-primary" onClick={()=>compareResult&&chooseWinner(compareResult)}>Choose {compareResult?.style}</button></div><div className="flex gap-2 overflow-x-auto pb-2">{results.map(result=><button key={result.id} className={`chip whitespace-nowrap ${result.style===pinned?'bg-black text-white':''}`} onClick={()=>{setPinned(result.style);setCompareIndex(0)}}>{result.style}</button>)}</div></div>}
       {Object.keys(generation).length>0&&<GenerationProgress styles={selected} generation={generation}/>}
       {localMode&&failedStyles.length>0&&<button type="button" className="btn-soft w-full" disabled={busy} onClick={retryFailed}>{busy?'Retrying failed styles…':`Retry ${failedStyles.length} failed ${failedStyles.length===1?'style':'styles'}`}</button>}
       {error&&<p className="text-red-700 text-sm" role="alert">{error}</p>}
