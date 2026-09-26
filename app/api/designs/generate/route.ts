@@ -38,12 +38,12 @@ export async function POST(req:NextRequest){
     const batch=stylesToGenerate.slice(i,i+2);
     const results=await Promise.allSettled(batch.map(async style=>{
       const styledProject={...project,style,source_image_url:project.source_image_url||''};
-      const output=await generateFromRoom(source,mime,styledProject,products);
+      const output=await generateFromRoom(source,mime,styledProject,products,stylesToGenerate);
       const imagePath=`${user.id}/${project.id}/${crypto.randomUUID()}.png`;
       const {error:uErr}=await admin.storage.from('generated-designs').upload(imagePath,output,{contentType:'image/png',upsert:false});
       if(uErr)throw uErr;
       const {data:signed}=await admin.storage.from('generated-designs').createSignedUrl(imagePath,60*60*24*7);
-      const {data:design,error:dErr}=await s.from('designs').insert({project_id:project.id,user_id:user.id,generated_image_path:imagePath,generated_image_url:signed?.signedUrl,estimated_total:total,prompt:designPrompt(styledProject,products)}).select().single();
+      const {data:design,error:dErr}=await s.from('designs').insert({project_id:project.id,user_id:user.id,generated_image_path:imagePath,generated_image_url:signed?.signedUrl,estimated_total:total,prompt:designPrompt(styledProject,products,stylesToGenerate)}).select().single();
       if(dErr)throw dErr;
       if(products.length)await admin.from('design_products').insert(products.map(x=>({design_id:design.id,category:x.category,title:x.title,store:x.store,price:x.price,image_url:x.image_url,product_url:x.product_url,affiliate_url:x.affiliate_url,description:x.description,in_stock:x.in_stock})));
       return {...design,style,generated_image_url:signed?.signedUrl};
