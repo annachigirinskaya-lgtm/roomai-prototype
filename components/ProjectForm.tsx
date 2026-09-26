@@ -21,7 +21,7 @@ export default function ProjectForm(){
   const [projectId,setProjectId]=useState('');
   const [pinned,setPinned]=useState('Modern');
   const [compareIndex,setCompareIndex]=useState(0);
-  const [compareMode,setCompareMode]=useState<'pin'|'grid'>('grid');
+  const [compareMode,setCompareMode]=useState<'pin'|'grid'>('pin');
   const [form,setForm]=useState({name:'My room',room_type:'Living Room',style:'Modern',color_palette:'Warm White',custom_colors:'',budget:1500,budget_mode:'balanced',keep_items:'',replace_items:'',notes:''});
   const alternatives=useMemo(()=>results.filter(x=>x.style!==pinned),[results,pinned]);
   const pinnedResult=results.find(x=>x.style===pinned)||results[0];
@@ -62,7 +62,7 @@ export default function ProjectForm(){
           if(!completed.length&&failures.some(x=>x.includes('OpenAI is not connected')))throw new Error('OpenAI generation is not connected in Vercel yet. Add OPENAI_API_KEY in Environment Variables, then redeploy.');
         }
         if(!completed.length)throw new Error(failures[0]||'No AI designs were generated.');
-        setResults(completed);setPinned(completed[0].style);setStep(2);window.scrollTo({top:0,behavior:'smooth'});
+        setResults(completed);setPinned(completed[0].style);setCompareIndex(0);setCompareMode('pin');setStep(2);window.scrollTo({top:0,behavior:'smooth'});
         if(completed.length!==selected.length)setError(`Generated ${completed.length} of ${selected.length} styles. ${failures[0]||''}`);
         return;
       }
@@ -73,7 +73,7 @@ export default function ProjectForm(){
       const project=await pr.json();if(!pr.ok)throw new Error(project.error||'Could not save the room.');setProjectId(project.id);
       const gr=await fetch('/api/designs/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({projectId:project.id,styles:selected,mode:'standard_design'})});
       const generated=await gr.json();if(!gr.ok)throw new Error(generated.error||'Could not generate the comparison.');
-      setResults(generated.designs);setPinned(generated.designs[0]?.style||selected[0]);setStep(2);window.scrollTo({top:0,behavior:'smooth'});
+      setResults(generated.designs);setPinned(generated.designs[0]?.style||selected[0]);setCompareIndex(0);setCompareMode('pin');setStep(2);window.scrollTo({top:0,behavior:'smooth'});
       if(generated.partial)setError('Some variants could not be generated. The completed results were saved.');
     }catch(e:any){setError(typeof e?.message==='string'?e.message:'Something went wrong.')}finally{setBusy(false)}
   }
@@ -98,7 +98,7 @@ export default function ProjectForm(){
     {step===2&&<section className="card p-5 md:p-7 space-y-6">
       <div className="flex items-start justify-between gap-3"><div><div className="kicker">02 · Compare</div><h2 className="text-3xl font-semibold mt-1">Choose the version that feels right.</h2><p className="text-stone-600 mt-2">These AI designs were generated from your uploaded room and saved {LOCAL_MODE?'on this device':'with your project'}.</p></div><button className="btn-soft text-sm" onClick={()=>setStep(1)}>Edit</button></div>
       <div className="compare-tabs"><button className={compareMode==='grid'?'active':''} onClick={()=>setCompareMode('grid')}>Results grid</button><button className={compareMode==='pin'?'active':''} onClick={()=>setCompareMode('pin')}>Pin & compare</button></div>
-      {compareMode==='grid'?<div className="compare-grid">{results.map(result=><button key={result.id} className="compare-grid-card" onClick={()=>chooseWinner(result)} disabled={busy}><ResultImage result={result}/><div className="p-3 text-left"><b>{result.style}</b><div className="text-xs text-stone-500 mt-1">Tap to choose and save</div></div></button>)}</div>:<div className="space-y-4"><div className="split-compare">{pinnedResult&&<ResultPane title="Pinned" result={pinnedResult}/>} {compareResult&&<ResultPane title={`${compareIndex+1} of ${alternatives.length}`} result={compareResult}/>}</div><div className="flex items-center justify-between gap-3"><button className="btn-soft" onClick={()=>setCompareIndex(i=>(i-1+alternatives.length)%alternatives.length)}>←</button><div className="text-sm text-center"><b>{pinnedResult?.style}</b> vs <b>{compareResult?.style}</b></div><button className="btn-soft" onClick={()=>setCompareIndex(i=>(i+1)%alternatives.length)}>→</button></div><div className="grid grid-cols-2 gap-3"><button className="btn-primary" onClick={()=>pinnedResult&&chooseWinner(pinnedResult)}>Choose {pinnedResult?.style}</button><button className="btn-primary" onClick={()=>compareResult&&chooseWinner(compareResult)}>Choose {compareResult?.style}</button></div><div className="flex gap-2 overflow-x-auto pb-2">{results.map(result=><button key={result.id} className={`chip whitespace-nowrap ${result.style===pinned?'bg-black text-white':''}`} onClick={()=>{setPinned(result.style);setCompareIndex(0)}}>{result.style}</button>)}</div></div>}
+      {compareMode==='grid'?<div className="compare-grid">{results.map(result=><button key={result.id} className="compare-grid-card" onClick={()=>{setPinned(result.style);setCompareIndex(0);setCompareMode('pin')}} disabled={busy}><ResultImage result={result}/><div className="p-3 text-left"><b>{result.style}</b><div className="text-xs text-stone-500 mt-1">Tap to pin and compare</div></div></button>)}</div>:<div className="space-y-4"><div className="split-compare">{pinnedResult&&<ResultPane title="Pinned" result={pinnedResult}/>} {compareResult&&<ResultPane title={`${compareIndex+1} of ${alternatives.length}`} result={compareResult}/>}</div><div className="flex items-center justify-between gap-3"><button className="btn-soft" disabled={!alternatives.length} onClick={()=>setCompareIndex(i=>(i-1+alternatives.length)%alternatives.length)}>←</button><div className="text-sm text-center"><b>{pinnedResult?.style}</b> vs <b>{compareResult?.style}</b></div><button className="btn-soft" disabled={!alternatives.length} onClick={()=>setCompareIndex(i=>(i+1)%alternatives.length)}>→</button></div><div className="grid grid-cols-2 gap-3"><button className="btn-primary" onClick={()=>pinnedResult&&chooseWinner(pinnedResult)}>Choose {pinnedResult?.style}</button><button className="btn-primary" disabled={!compareResult} onClick={()=>compareResult&&chooseWinner(compareResult)}>Choose {compareResult?.style}</button></div><div className="flex gap-2 overflow-x-auto pb-2">{results.map(result=><button key={result.id} className={`chip whitespace-nowrap ${result.style===pinned?'bg-black text-white':''}`} onClick={()=>{setPinned(result.style);setCompareIndex(0)}}>{result.style}</button>)}</div></div>}
       {error&&<p className="text-red-700 text-sm" role="alert">{error}</p>}
     </section>}
   </div>
