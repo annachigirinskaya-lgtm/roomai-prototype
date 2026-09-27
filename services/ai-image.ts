@@ -1,13 +1,13 @@
 import OpenAI, { toFile } from 'openai';
 import { Product, ProjectInput } from '@/lib/types';
 import { STYLE_GUIDANCE } from '@/lib/catalog';
-export function designPrompt(p:ProjectInput,products:Product[]){const shopping=products.map(x=>`${x.category}: ${x.title} (${x.store}, $${x.price})`).join('; ');const signature=STYLE_GUIDANCE[p.style]||p.style;return `Edit the PROVIDED PHOTO into a complete, photorealistic, professionally designed and fully furnished ${p.room_type}. This is an image edit, not a request for a new or similar room: the output must remain unmistakably the exact same room and camera view.
+export function designPrompt(p:ProjectInput,products:Product[],comparisonStyles:string[]=[]){const shopping=products.map(x=>`${x.category}: ${x.title} (${x.store}, $${x.price})`).join('; ');const signature=STYLE_GUIDANCE[p.style]||p.style;return `Edit the PROVIDED PHOTO into a complete, photorealistic, professionally designed and fully furnished ${p.room_type}. This is an image edit, not a request for a new or similar room: the output must remain unmistakably the exact same room and camera view.
 
 NON-NEGOTIABLE ROOM FIDELITY: before designing, inspect and internally inventory every visible structural element in the source photo. Reproduce every hinged door, sliding door, doorway, passage, window, balcony opening, column, vent, switch, outlet, ceiling edge, floor boundary, kitchen cabinet, countertop and fixed fixture one-for-one in the identical position, size and perspective. Preserve the exact room geometry, dimensions, wall lengths, camera position, field of view, ceiling height, flooring and kitchen footprint. The before and after images must align if overlaid. Never remove, cover, narrow, move, resize or replace an existing door, doorway, window, balcony opening or kitchen element. Never build a feature wall, marble slab, panel, cabinet, fireplace, television or furniture across an opening. Use only genuinely solid wall areas for wall treatments and place furniture within the existing free floor area. Never invent a different property.
 
 DESIGN INTENSITY: make a substantial, clearly visible whole-room transformation worthy of a professional interior designer. Do not merely add a basic sofa, rug and coffee table. Build a deliberate composition with a strong focal point, layered lighting, correctly scaled furniture, window treatments, coordinated textiles, wall treatment or millwork where appropriate, art, plants and styled accessories. The room must feel finished, memorable and editorial while remaining physically buildable. Do not leave it sparse, builder-basic, generic, sterile or unfinished.
 
-STYLE: apply one unmistakable style only: ${p.style}. Required visual signature: ${signature}. Do not drift into generic beige contemporary design and do not mix visual signatures from other catalog styles.
+STYLE: apply one unmistakable style only: ${p.style}. Required visual signature: ${signature}. Do not drift into generic beige contemporary design and do not mix visual signatures from other catalog styles. ${comparisonStyles.length>1?`THIS IS ONE OF ${comparisonStyles.length} INDEPENDENT COMPARISON RENDERS OF THE SAME SOURCE ROOM. Other requested styles: ${comparisonStyles.filter(s=>s!==p.style).join(', ')}. Make this ${p.style} version immediately distinguishable through its signature furniture shapes, materials, lighting, wall treatments and decor, not merely a palette swap. Do not incorporate the signature elements of the other requested styles. Preserve the source architecture identically across every version.`:''}
 
 LIVING ROOM FUNCTION: if this is a living room, the finished design must include a clearly visible, realistically sized television and an intentional media composition unless the client explicitly asks for no TV. Place it only on an existing uninterrupted solid wall that can physically fit it. Integrate its surround, console and lighting into the selected style without covering, moving or narrowing any door, doorway, window or balcony opening.
 
@@ -61,14 +61,14 @@ function outputSize(source:Buffer,mime:string,model:string){
   return `${targetWidth}x${targetHeight}`;
 }
 
-export async function generateFromRoom(source:Buffer,mime:string,p:ProjectInput,products:Product[]){
+export async function generateFromRoom(source:Buffer,mime:string,p:ProjectInput,products:Product[],comparisonStyles:string[]=[]){
   if(!process.env.OPENAI_API_KEY)throw new Error('OPENAI_API_KEY missing');
   const client=new OpenAI({apiKey:process.env.OPENAI_API_KEY});
   const file=await toFile(source,'room',{type:mime});
   const res=await client.images.edit({
     model:IMAGE_MODEL,
     image:file,
-    prompt:designPrompt(p,products),
+    prompt:designPrompt(p,products,comparisonStyles),
     size:outputSize(source,mime,IMAGE_MODEL),
     quality:IMAGE_QUALITY,
     ...(IMAGE_MODEL.startsWith('gpt-image-2')?{}:{input_fidelity:'high' as const}),
