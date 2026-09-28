@@ -44,7 +44,8 @@ export async function POST(req:NextRequest){
   }
 
   if(pack){
-    const price=packMap[pack]!;
+    const price=packMap[pack];
+    if(!price)return NextResponse.json({error:'Credit packs are not available yet.'},{status:503});
     const configured=await stripe.prices.retrieve(price);
     const expected={pack10:499,pack30:999,pack100:2499}[pack];
     if(!configured.active||configured.currency!=='usd'||configured.unit_amount!==expected||configured.type!=='one_time')return NextResponse.json({error:'Credit pack price configuration needs review.'},{status:503});

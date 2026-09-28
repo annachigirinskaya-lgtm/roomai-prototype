@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { refineRoomDesign } from '@/services/ai-image';
+import { editorAccess } from '@/lib/design-access';
 
 export const runtime='nodejs';
 export const maxDuration=300;
@@ -21,9 +22,10 @@ function rateLimited(req:NextRequest){
 }
 
 export async function POST(req:NextRequest){
-  if(process.env.NEXT_PUBLIC_SUPABASE_URL&&process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)return NextResponse.json({error:'Prototype edits are unavailable when account billing is enabled.'},{status:403});
+  const access=await editorAccess();
+  if(!access.allowed)return NextResponse.json({error:access.error},{status:access.status});
   if(!process.env.OPENAI_API_KEY)return NextResponse.json({error:'OpenAI is not connected in Vercel yet.'},{status:503});
-  if(rateLimited(req))return NextResponse.json({error:'Hourly prototype editing limit reached. Please try again later.'},{status:429});
+  if(rateLimited(req))return NextResponse.json({error:'Hourly editing limit reached. Please try again later.'},{status:429});
   try{
     const data=await req.formData();
     const image=data.get('image');
