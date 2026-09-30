@@ -8,7 +8,9 @@ export const maxDuration=300;
 
 const MAX_IMAGE_BYTES=20*1024*1024;
 const WINDOW_MS=60*60*1000;
-const MAX_PER_WINDOW=12;
+// One full six-style comparison plus two retries per IP each hour.
+// The prepaid API balance remains the hard spending ceiling for the private beta.
+const MAX_PER_WINDOW=8;
 const globalRate=globalThis as unknown as {roomAiRate?:Map<string,number[]>};
 const rate=globalRate.roomAiRate??new Map<string,number[]>();
 globalRate.roomAiRate=rate;
