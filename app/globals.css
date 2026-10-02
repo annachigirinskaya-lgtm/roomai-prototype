@@ -26,3 +26,6 @@ body{background:#f7f4ef;color:#181818}.shell{@apply max-w-7xl mx-auto px-4 md:px
   .lux-actions a{display:flex;min-height:3.1rem;align-items:center;justify-content:center;text-align:center}
   .lux-overlay{background:linear-gradient(180deg,rgba(17,12,8,.2),rgba(17,12,8,.48) 40%,rgba(17,12,8,.92))}
 }
+
+.split-compare{touch-action:pan-y}
+@media(max-width:640px){main.shell:has(.room-upload){padding-top:.75rem}.room-upload img{height:auto;max-height:65svh;object-fit:contain}.split-compare .result-image img{object-fit:contain}}

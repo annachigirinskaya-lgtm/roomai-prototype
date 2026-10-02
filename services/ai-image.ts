@@ -1,6 +1,7 @@
 import OpenAI, { toFile } from 'openai';
 import { Product, ProjectInput } from '@/lib/types';
 import { STYLE_GUIDANCE } from '@/lib/catalog';
+import { preserveOutsideMask } from './masked-edit';
 export function designPrompt(p:ProjectInput,products:Product[]){const shopping=products.map(x=>`${x.category}: ${x.title} (${x.store}, $${x.price})`).join('; ');const signature=STYLE_GUIDANCE[p.style]||p.style;return `Edit the PROVIDED PHOTO into a complete, photorealistic, professionally designed and fully furnished ${p.room_type}. This is an image edit, not a request for a new or similar room: the output must remain unmistakably the exact same room and camera view.
 
 NON-NEGOTIABLE ROOM FIDELITY: before designing, inspect and internally inventory every visible structural element in the source photo. Reproduce every hinged door, sliding door, doorway, passage, window, balcony opening, column, vent, switch, outlet, ceiling edge, floor boundary, kitchen cabinet, countertop and fixed fixture one-for-one in the identical position, size and perspective. Preserve the exact room geometry, dimensions, wall lengths, camera position, field of view, ceiling height, flooring and kitchen footprint. The before and after images must align if overlaid. Never remove, cover, narrow, move, resize or replace an existing door, doorway, window, balcony opening or kitchen element. Never build a feature wall, marble slab, panel, cabinet, fireplace, television or furniture across an opening. Use only genuinely solid wall areas for wall treatments and place furniture within the existing free floor area. Never invent a different property.
@@ -108,7 +109,8 @@ export async function refineRoomDesign(source:Buffer,mime:string,instruction:str
   });
   const b64=res.data?.[0]?.b64_json;
   if(!b64)throw new Error('No revised image returned');
-  return Buffer.from(b64,'base64');
+  const generated=Buffer.from(b64,'base64');
+  return mask?preserveOutsideMask(source,generated,mask):generated;
 }
 
 export async function placeProductInRoom(source:Buffer,mime:string,product:Buffer,productMime:string,category:string,x:number,y:number){
