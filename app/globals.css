@@ -50,3 +50,12 @@ body{background:#f7f4ef;color:#181818}.shell{@apply max-w-7xl mx-auto px-4 md:px
 .comparison-stage.comparison-portrait{grid-template-areas:"reference alternative" "navigation navigation";grid-template-rows:minmax(0,1fr) 52px;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .comparison-portrait .comparison-reference img{object-position:right center}
 .comparison-portrait .comparison-alternative img{object-position:left center}
+
+/* Let the original photo set its own height, without side letterboxing. */
+.room-upload.has-image{display:block;min-height:0;background:transparent}
+.room-upload.has-image img{display:block;width:100%;height:auto;max-height:none;object-fit:contain}
+@media(max-width:640px){
+  .upload-step{padding-left:0;padding-right:0;border:0;border-radius:0;background:transparent;box-shadow:none}
+  .upload-step .room-upload.has-image{width:100vw;max-width:none;margin-left:calc((100% - 100vw)/2);border:0;border-radius:0}
+  .upload-step .room-upload.has-image img{width:100%;height:auto;max-height:none}
+}
