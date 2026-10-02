@@ -6,6 +6,10 @@ export function designPrompt(p:ProjectInput,products:Product[]){const shopping=p
 
 NON-NEGOTIABLE ROOM FIDELITY: before designing, inspect and internally inventory every visible structural element in the source photo. Reproduce every hinged door, sliding door, doorway, passage, window, balcony opening, column, vent, switch, outlet, ceiling edge, floor boundary, kitchen cabinet, countertop and fixed fixture one-for-one in the identical position, size and perspective. Preserve the exact room geometry, dimensions, wall lengths, camera position, field of view, ceiling height, flooring and kitchen footprint. The before and after images must align if overlaid. Never remove, cover, narrow, move, resize or replace an existing door, doorway, window, balcony opening or kitchen element. Never build a feature wall, marble slab, panel, cabinet, fireplace, television or furniture across an opening. Use only genuinely solid wall areas for wall treatments and place furniture within the existing free floor area. Never invent a different property.
 
+FURNITURE LAYOUT: ${p.layout_mode==='rearrange'?'The client explicitly permits a new furniture arrangement. Propose a functional arrangement only inside the existing room; preserve architecture and keep all doors, windows and walkways accessible.':'KEEP THE ORIGINAL FURNITURE ARRANGEMENT. Preserve the exact position, orientation, footprint and scale of every existing major furniture item. In particular, keep the bed headboard against the same wall, its long axis in the same direction and the same clearances around it. Never rotate the bed, push it into another corner, move a sofa or relocate a table. You may update their materials, upholstery, headboard design, bedding and decorative styling while retaining their anchors and orientation. Add new decor only in genuinely available space.'}
+
+MULTIPLE ROOM VIEWS: when additional input images are provided, the FIRST image is the primary camera view and defines the output perspective and aspect ratio. All later images show other angles of this SAME room and are spatial references only. Cross-check doors, windows, furniture anchors and wall relationships against them. Do not combine camera views, produce a collage, copy another angle as the output, or infer new architecture from a different viewpoint.
+
 DESIGN INTENSITY: make a substantial, clearly visible whole-room transformation worthy of a professional interior designer. Do not merely add a basic sofa, rug and coffee table. Build a deliberate composition with a strong focal point, layered lighting, correctly scaled furniture, window treatments, coordinated textiles, wall treatment or millwork where appropriate, art, plants and styled accessories. The room must feel finished, memorable and editorial while remaining physically buildable. Do not leave it sparse, builder-basic, generic, sterile or unfinished.
 
 STYLE: apply one unmistakable style only: ${p.style}. Required visual signature: ${signature}. Do not drift into generic beige contemporary design and do not mix visual signatures from other catalog styles.
@@ -62,13 +66,14 @@ function outputSize(source:Buffer,mime:string,model:string){
   return `${targetWidth}x${targetHeight}`;
 }
 
-export async function generateFromRoom(source:Buffer,mime:string,p:ProjectInput,products:Product[]){
+export async function generateFromRoom(source:Buffer,mime:string,p:ProjectInput,products:Product[],references:{source:Buffer;mime:string}[]=[]){
   if(!process.env.OPENAI_API_KEY)throw new Error('OPENAI_API_KEY missing');
   const client=new OpenAI({apiKey:process.env.OPENAI_API_KEY});
-  const file=await toFile(source,'room',{type:mime});
+  const file=await toFile(source,'primary-room',{type:mime});
+  const referenceFiles=await Promise.all(references.map((reference,index)=>toFile(reference.source,`room-reference-${index+1}`,{type:reference.mime})));
   const res=await client.images.edit({
     model:IMAGE_MODEL,
-    image:file,
+    image:referenceFiles.length?[file,...referenceFiles]:file,
     prompt:designPrompt(p,products),
     size:outputSize(source,mime,IMAGE_MODEL),
     quality:IMAGE_QUALITY,

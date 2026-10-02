@@ -20,6 +20,8 @@ export default function ProjectForm(){
   const [error,setError]=useState('');
   const [file,setFile]=useState<File|null>(null);
   const [preview,setPreview]=useState('');
+  const [references,setReferences]=useState<{id:string;file:File;preview:string}[]>([]);
+  const [preparingReferences,setPreparingReferences]=useState(false);
   const [selected,setSelected]=useState<string[]>(['Modern','Luxury','Japandi','Old Money']);
   const [results,setResults]=useState<Result[]>([]);
   const [projectId,setProjectId]=useState('');
@@ -32,7 +34,7 @@ export default function ProjectForm(){
   const objectUrls=useRef<string[]>([]);
   const betaToken=useRef('');
   const comparisonScreen=useRef<HTMLElement|null>(null);
-  const [form,setForm]=useState({name:'My room',room_type:'Living Room',style:'Modern',color_palette:'Warm White',custom_colors:'',budget:1500,budget_mode:'balanced',keep_items:'',replace_items:'',notes:''});
+  const [form,setForm]=useState({name:'My room',room_type:'Living Room',style:'Modern',color_palette:'Warm White',custom_colors:'',budget:1500,budget_mode:'balanced',keep_items:'',replace_items:'',notes:'',layout_mode:'preserve' as 'preserve'|'rearrange'});
   const alternatives=useMemo(()=>results.filter(x=>x.style!==pinned),[results,pinned]);
   const pinnedResult=results.find(x=>x.style===pinned)||results[0];
   const compareResult=alternatives[Math.min(compareIndex,Math.max(0,alternatives.length-1))];
@@ -69,6 +71,16 @@ export default function ProjectForm(){
     if(next.size>20*1024*1024){setError('The photo must be smaller than 20 MB.');return}
     try{setPreview(await compressImage(next))}catch{setPreview(URL.createObjectURL(next))}
   }
+  async function addReferences(files:File[]){
+    if(!files.length||preparingReferences)return;
+    if(references.length+files.length>3){setError('Add up to three additional room photos.');return}
+    if(files.some(file=>!file.type.startsWith('image/')||file.size>20*1024*1024)){setError('Choose room photos smaller than 20 MB each.');return}
+    setPreparingReferences(true);setError('');
+    try{
+      const ready=await Promise.all(files.map(async file=>{const preview=await compressImage(file);return {id:crypto.randomUUID(),preview,file:dataUrlToFile(preview,'room-reference.jpg')}}));
+      setReferences(current=>[...current,...ready]);
+    }catch{setError('Could not read an additional photo. Please try JPG, PNG or WebP.')}finally{setPreparingReferences(false)}
+  }
   function toggleStyle(style:string){
     setError('');setSelected(current=>{
       if(current.includes(style)){if(current.length<=MIN_STYLES){setError(`Choose at least ${MIN_STYLES} styles.`);return current}return current.filter(x=>x!==style)}
@@ -85,7 +97,7 @@ export default function ProjectForm(){
       const batch=styles.slice(i,i+2);
       batch.forEach(style=>setStylePhase(style,'generating'));
       const generated=await Promise.allSettled(batch.map(async style=>{
-        const body=new FormData();body.append('image',uploadFile);body.append('project',JSON.stringify({...form,budget:Number(form.budget),style,source_image_url:''}));
+        const body=new FormData();body.append('image',uploadFile);references.forEach(reference=>body.append('references',reference.file));body.append('project',JSON.stringify({...form,budget:Number(form.budget),style,source_image_url:''}));
         const response=await fetch('/api/designs/quick-generate',{method:'POST',headers:betaToken.current?{'x-roomai-beta-token':betaToken.current}:{},body});
         if(!response.ok){let message='Could not generate this style.';try{message=(await response.json()).error||message}catch{}throw new Error(message)}
         const image=await response.blob();const id=crypto.randomUUID();
@@ -125,9 +137,15 @@ export default function ProjectForm(){
       const s=createClient();const {data:{user}}=await s.auth.getUser();if(!user)throw new Error('Please sign in before generating designs.');
       const path=`${user.id}/${crypto.randomUUID()}.jpg`;
       const up=await s.storage.from('room-images').upload(path,uploadFile,{contentType:'image/jpeg',upsert:false});if(up.error)throw up.error;
+      const referencePaths:string[]=[];
+      for(const reference of references){
+        const referencePath=`${user.id}/${crypto.randomUUID()}.jpg`;
+        const uploaded=await s.storage.from('room-images').upload(referencePath,reference.file,{contentType:'image/jpeg',upsert:false});
+        if(uploaded.error)throw uploaded.error;referencePaths.push(referencePath);
+      }
       const pr=await fetch('/api/projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...form,budget:Number(form.budget),style:selected[0],source_image_path:path})});
       const project=await pr.json();if(!pr.ok)throw new Error(project.error||'Could not save the room.');setProjectId(project.id);
-      const gr=await fetch('/api/designs/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({projectId:project.id,styles:selected,mode:'standard_design'})});
+      const gr=await fetch('/api/designs/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({projectId:project.id,styles:selected,mode:'standard_design',layout_mode:form.layout_mode,reference_image_paths:referencePaths})});
       const generated=await gr.json();if(!gr.ok)throw new Error(generated.error||'Could not generate the comparison.');
       const returnedStyles=new Set<string>(generated.designs.map((design:Result)=>design.style));
       selected.forEach(style=>setStylePhase(style,returnedStyles.has(style)?'done':'failed',returnedStyles.has(style)?undefined:'This style did not finish.'));
@@ -156,10 +174,16 @@ export default function ProjectForm(){
     {step===1&&<section className="upload-step card p-5 md:p-7 space-y-6">
       <h1 className="text-2xl font-semibold">Upload photo</h1>
       <label className={`room-upload ${preview?'has-image':''}`}>{preview?<img src={preview} alt="Uploaded room"/>:<div className="text-center"><div className="text-4xl">＋</div><b>Add your room photo</b><div className="text-sm text-stone-500 mt-1">JPG, PNG, HEIC or WebP · up to 20 MB</div></div>}<input className="sr-only" type="file" accept="image/*" onChange={e=>onFile(e.target.files?.[0]||null)}/>{preview&&<span className="upload-chip">Change photo</span>}</label>
+      {preview&&<div className="space-y-3">
+        <div className="flex items-center justify-between gap-2"><label className="font-medium" htmlFor="reference-photos">Additional angles · {references.length}/3</label><label className="btn-soft cursor-pointer text-sm">{preparingReferences?'Preparing…':'＋ Add photos'}<input id="reference-photos" type="file" accept="image/*" multiple disabled={busy||preparingReferences||references.length>=3} className="sr-only" onChange={event=>{void addReferences(Array.from(event.target.files||[]));event.target.value=''}}/></label></div>
+        <p className="text-sm text-stone-500">Optional: show the same room from other corners. The main photo sets the result view.</p>
+        {references.length>0&&<div className="grid grid-cols-3 gap-2">{references.map((reference,index)=><div key={reference.id} className="relative"><img src={reference.preview} alt={`Additional room angle ${index+1}`} className="aspect-[3/4] w-full rounded-xl object-cover"/><button type="button" disabled={busy||preparingReferences} aria-label={`Remove additional angle ${index+1}`} onClick={()=>setReferences(current=>current.filter(item=>item.id!==reference.id))} className="absolute right-1 top-1 h-9 w-9 rounded-full bg-black/75 text-white">×</button></div>)}</div>}
+        <Field label="Furniture layout"><select aria-label="Furniture layout" className="input" value={form.layout_mode} disabled={busy} onChange={event=>setForm({...form,layout_mode:event.target.value as 'preserve'|'rearrange'})}><option value="preserve">Keep furniture in its current position</option><option value="rearrange">Suggest a new furniture arrangement</option></select></Field>
+      </div>}
       <div className="grid md:grid-cols-2 gap-4"><Field label="Project name"><input className="input" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></Field><Field label="Room type"><select className="input" value={form.room_type} onChange={e=>setForm({...form,room_type:e.target.value})}>{ROOM_TYPES.map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Color palette"><select className="input" value={form.color_palette} onChange={e=>setForm({...form,color_palette:e.target.value})}>{PALETTES.map(x=><option key={x}>{x}</option>)}</select></Field>{form.color_palette==='Custom'&&<Field label="Your colors"><input className="input" value={form.custom_colors} onChange={e=>setForm({...form,custom_colors:e.target.value})} placeholder="Cream, walnut, olive…"/></Field>}<Field label="Budget ($)"><input className="input" type="number" min="50" step="10" value={form.budget} onChange={e=>setForm({...form,budget:Number(e.target.value)})}/></Field><Field label="Keep these items"><textarea className="input min-h-24" value={form.keep_items} onChange={e=>setForm({...form,keep_items:e.target.value})} placeholder="Sofa, flooring, fireplace…"/></Field><Field label="Replace or add"><textarea className="input min-h-24" value={form.replace_items} onChange={e=>setForm({...form,replace_items:e.target.value})} placeholder="Furniture, lighting, curtains…"/></Field></div>
       <div><div className="flex items-end justify-between gap-3"><div><div className="label mb-1">Choose 2–6 styles</div><p className="text-sm text-stone-500">{selected.length} selected · choose 2 for a quick test or 6 for the full comparison.</p></div><button type="button" className="text-sm underline" onClick={()=>setSelected(STYLES.slice(0,6))}>Select first 6</button></div><div className="style-grid mt-4">{STYLES.map(style=><button type="button" key={style} onClick={()=>toggleStyle(style)} className={`style-card ${selected.includes(style)?'selected':''}`}><img className="style-photo" src={STYLE_META[style].image} alt={`${style} style reference`}/><div className="p-3"><div className="flex items-center justify-between gap-2"><b>{style}</b>{selected.includes(style)&&<span className="check">✓</span>}</div><div className="text-xs text-stone-500 mt-1">{STYLE_META[style].mood}</div><div className="text-[11px] leading-snug text-stone-500 mt-2 line-clamp-3">{STYLE_META[style].guidance}</div><div className="inspiration-label">Style reference</div></div></button>)}</div></div>
       {error&&<p className="text-red-700 text-sm" role="alert">{error}</p>}
-      <button type="button" disabled={busy||!betaAccess} className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-50" onClick={generateComparison}>{busy?'Generating and saving your room designs…':`Generate ${selected.length} AI designs`}</button>
+      <button type="button" disabled={busy||preparingReferences||!betaAccess} className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-50" onClick={generateComparison}>{busy?'Generating and saving your room designs…':`Generate ${selected.length} AI designs`}</button>
       {Object.keys(generation).length>0&&<GenerationProgress styles={selected} generation={generation}/>}
       <p className="text-xs text-center text-stone-500">{localMode?'Prototype results are saved on this device. Each selected style creates a real AI edit of your uploaded room.':'Generated results are saved to your project. Free plan: 1 credit per variant; paid plans include standard redesigns.'}</p>
     </section>}

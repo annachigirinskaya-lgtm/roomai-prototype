@@ -39,13 +39,18 @@ export async function POST(req:NextRequest){
     const data=await req.formData();
     const image=data.get('image');
     const raw=data.get('project');
+    const referenceFiles=data.getAll('references');
+    if(referenceFiles.length>3)return NextResponse.json({error:'Add up to three additional room photos.'},{status:400});
+    if(referenceFiles.some(file=>!(file instanceof File)||file.size>MAX_IMAGE_BYTES||!['image/jpeg','image/png','image/webp'].includes(file.type)))return NextResponse.json({error:'Each additional photo must be a JPG, PNG or WebP smaller than 20 MB.'},{status:400});
     if(!(image instanceof File)||typeof raw!=='string')return NextResponse.json({error:'Room photo and project settings are required.'},{status:400});
     if(image.size>MAX_IMAGE_BYTES)return NextResponse.json({error:'The photo must be smaller than 20 MB.'},{status:413});
     if(!['image/jpeg','image/png','image/webp'].includes(image.type))return NextResponse.json({error:'Use a JPG, PNG or WebP room photo.'},{status:415});
     const parsed=JSON.parse(raw) as ProjectInput;
+    if(parsed.layout_mode!==undefined&&!['preserve','rearrange'].includes(parsed.layout_mode))return NextResponse.json({error:'Choose a valid furniture layout option.'},{status:400});
     if(!STYLES.includes(parsed.style as never))return NextResponse.json({error:'Choose a valid interior style.'},{status:400});
     const project:ProjectInput={...parsed,budget:Number(parsed.budget)||1500,source_image_url:''};
-    const output=await generateFromRoom(Buffer.from(await image.arrayBuffer()),image.type,project,[]);
+    const references=await Promise.all((referenceFiles as File[]).map(async file=>({source:Buffer.from(await file.arrayBuffer()),mime:file.type})));
+    const output=await generateFromRoom(Buffer.from(await image.arrayBuffer()),image.type,project,[],references);
     return new Response(new Uint8Array(output),{status:200,headers:{'content-type':'image/png','cache-control':'private, no-store','x-roomai-style':encodeURIComponent(project.style)}});
   }catch(error:any){
     console.error('Quick generation failed',error);
