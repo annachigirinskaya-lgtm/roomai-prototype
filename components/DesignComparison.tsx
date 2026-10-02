@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 
 type ComparisonResult={id:string;style:string;generated_image_url:string};
 type Props={
@@ -17,10 +17,11 @@ type Props={
 
 export default function DesignComparison({pinned,alternative,index,total,busy,onPrevious,onNext,onPin,onChoose}:Props){
   const swipeStart=useRef<number|null>(null);
+  const [portrait,setPortrait]=useState(false);
   return <>
-    <div className="comparison-stage">
+    <div className={`comparison-stage${portrait?' comparison-portrait':''}`}>
       {pinned&&<div className="comparison-photo comparison-reference">
-        <img src={pinned.generated_image_url} alt={`Pinned ${pinned.style} room design`}/>
+        <img src={pinned.generated_image_url} alt={`Pinned ${pinned.style} room design`} onLoad={event=>{const image=event.currentTarget;setPortrait(image.naturalHeight>image.naturalWidth)}}/>
       </div>}
       <div className="comparison-navigation">
         <button type="button" disabled={!total||busy} aria-label="Previous design" onClick={onPrevious}>←</button>
