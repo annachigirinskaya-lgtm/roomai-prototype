@@ -1,2 +1,71 @@
+import Image from 'next/image';
 import Link from 'next/link';
-export default function Home(){return <div className="space-y-16"><section className="lux-hero"><img src="/roomai-hero.png" alt="Luxury RoomAI interior"/><div className="lux-overlay"></div><div className="lux-copy"><span className="lux-logo">Room<span>AI</span></span><div className="kicker text-white/80">AI INTERIOR DESIGN + REAL SHOPPING</div><h1>Your room.<br/>Your budget.<br/><em>Real products.</em></h1><p>Upload once. Compare up to six styles. Pick your favorite, set the budget and shop the room.</p><div className="flex flex-wrap gap-3 mt-6"><Link href="/new-project" className="btn-primary">Start designing ✨</Link><Link href="/pricing" className="btn-glass">See pricing</Link></div></div></section><section><div className="kicker">How V6 works</div><h2 className="text-3xl md:text-5xl font-semibold mt-2">Compare before you commit.</h2><div className="grid md:grid-cols-4 gap-4 mt-6">{['Upload your room once','Choose 1–6 styles','Pin one + compare the rest','Pick a winner + shop it'].map((x,i)=><div className="card p-6" key={x}><div className="text-sm text-stone-500">0{i+1}</div><h3 className="text-xl font-semibold mt-3">{x}</h3></div>)}</div></section></div>}
+
+const steps = [
+  'Upload your room once',
+  'Choose 1–6 styles',
+  'Pin one + compare the rest',
+  'Pick a winner + shop it',
+];
+
+export default function Home() {
+  return (
+    <div className="space-y-16">
+      <section className="lux-hero">
+        <Image
+          src="/roomai-hero-clean.webp"
+          alt="Warm, modern living room"
+          fill
+          priority
+          sizes="(max-width: 768px) 100vw, 1280px"
+          className="lux-hero-image"
+        />
+        <div className="lux-overlay" />
+
+        <div className="lux-copy">
+          <span className="lux-logo">
+            Room<span>AI</span>
+          </span>
+
+          <div className="lux-content">
+            <div className="kicker text-white/80">
+              AI INTERIOR DESIGN + REAL SHOPPING
+            </div>
+            <h1>
+              <span>Your room.</span>
+              <span>Your budget.</span>
+              <em>Real products.</em>
+            </h1>
+            <p>
+              Upload once. Compare up to six styles. Pick your favorite, set the
+              budget and shop the room.
+            </p>
+            <div className="lux-actions">
+              <Link href="/new-project" className="btn-primary">
+                Start designing ✨
+              </Link>
+              <Link href="/pricing" className="btn-glass">
+                See pricing
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div className="kicker">How V6 works</div>
+        <h2 className="mt-2 text-3xl font-semibold md:text-5xl">
+          Compare before you commit.
+        </h2>
+        <div className="mt-6 grid gap-4 md:grid-cols-4">
+          {steps.map((step, index) => (
+            <div className="card p-6" key={step}>
+              <div className="text-sm text-stone-500">0{index + 1}</div>
+              <h3 className="mt-3 text-xl font-semibold">{step}</h3>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
