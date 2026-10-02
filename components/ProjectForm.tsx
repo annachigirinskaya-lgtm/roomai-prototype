@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/client';
 import { ROOM_TYPES, STYLES, PALETTES, STYLE_META } from '@/lib/catalog';
 import { useRouter } from 'next/navigation';
 import { saveLocalDesign } from '@/lib/local-designs';
-import BetaFeedback from '@/components/BetaFeedback';
+import DesignComparison from '@/components/DesignComparison';
 
 const BETA_CONFIGURED=process.env.NEXT_PUBLIC_ROOMAI_BETA_MODE==='true';
 const ACCOUNT_MODE=Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL&&process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
@@ -31,13 +31,23 @@ export default function ProjectForm(){
   const [betaAccess,setBetaAccess]=useState(!BETA_CONFIGURED);
   const objectUrls=useRef<string[]>([]);
   const betaToken=useRef('');
-  const swipeStart=useRef<number|null>(null);
+  const comparisonScreen=useRef<HTMLElement|null>(null);
   const [form,setForm]=useState({name:'My room',room_type:'Living Room',style:'Modern',color_palette:'Warm White',custom_colors:'',budget:1500,budget_mode:'balanced',keep_items:'',replace_items:'',notes:''});
   const alternatives=useMemo(()=>results.filter(x=>x.style!==pinned),[results,pinned]);
   const pinnedResult=results.find(x=>x.style===pinned)||results[0];
   const compareResult=alternatives[Math.min(compareIndex,Math.max(0,alternatives.length-1))];
   const failedStyles=selected.filter(style=>generation[style]?.phase==='failed');
   const localMode=betaMode||!ACCOUNT_MODE;
+
+  useEffect(()=>{
+    if(step!==2)return;
+    const previousOverflow=document.body.style.overflow;
+    document.body.style.overflow='hidden';
+    const viewport=window.visualViewport;
+    const resize=()=>{comparisonScreen.current?.style.setProperty('--comparison-height',`${viewport?.height||window.innerHeight}px`)};
+    resize();viewport?.addEventListener('resize',resize);window.addEventListener('resize',resize);
+    return()=>{document.body.style.overflow=previousOverflow;viewport?.removeEventListener('resize',resize);window.removeEventListener('resize',resize)};
+  },[step]);
 
   useEffect(()=>{
     const automaticPreview=window.location.hostname.includes('-git-')&&window.location.hostname.endsWith('.vercel.app');
@@ -153,21 +163,33 @@ export default function ProjectForm(){
       {Object.keys(generation).length>0&&<GenerationProgress styles={selected} generation={generation}/>}
       <p className="text-xs text-center text-stone-500">{localMode?'Prototype results are saved on this device. Each selected style creates a real AI edit of your uploaded room.':'Generated results are saved to your project. Free plan: 1 credit per variant; paid plans include standard redesigns.'}</p>
     </section>}
-    {step===2&&<section className="card p-5 md:p-7 space-y-6">
-      <div className="flex items-start justify-between gap-3"><div><div className="kicker">02 · Compare</div><h2 className="text-3xl font-semibold mt-1">Compare your designs</h2></div><button className="btn-soft text-sm" onClick={()=>setStep(1)}>Edit</button></div>
-      <div className="compare-tabs"><button className={compareMode==='grid'?'active':''} onClick={()=>setCompareMode('grid')}>All designs</button><button className={compareMode==='pin'?'active':''} onClick={()=>setCompareMode('pin')}>Pin & compare</button></div>
-      {compareMode==='grid'?<div className="compare-grid">{results.map(result=><button key={result.id} className="compare-grid-card" onClick={()=>{setPinned(result.style);setCompareIndex(0);setCompareMode('pin')}} disabled={busy}><ResultImage result={result}/><div className="p-3 text-left"><b>{result.style}</b><div className="text-xs text-stone-500 mt-1">Tap to pin & compare</div></div></button>)}</div>:<div className="space-y-4"><div className="split-compare" onTouchStart={event=>{swipeStart.current=event.touches[0].clientX}} onTouchEnd={event=>{const start=swipeStart.current;swipeStart.current=null;if(start===null||!alternatives.length)return;const delta=event.changedTouches[0].clientX-start;if(Math.abs(delta)>40)setCompareIndex(i=>(i+(delta<0?1:-1)+alternatives.length)%alternatives.length)}}>{pinnedResult&&<ResultPane title="Pinned" result={pinnedResult}/>} {compareResult&&<ResultPane title={`${compareIndex+1} of ${alternatives.length}`} result={compareResult} onPin={()=>{setPinned(compareResult.style);setCompareIndex(0)}}/>}</div><div className="flex items-center justify-between gap-3"><button className="btn-soft" disabled={!alternatives.length} aria-label="Previous design" onClick={()=>setCompareIndex(i=>(i-1+alternatives.length)%alternatives.length)}>←</button><div className="text-sm text-center"><b>{pinnedResult?.style}</b> vs <b>{compareResult?.style}</b></div><button className="btn-soft" disabled={!alternatives.length} aria-label="Next design" onClick={()=>setCompareIndex(i=>(i+1)%alternatives.length)}>→</button></div><div className="grid grid-cols-2 gap-3"><button className="btn-primary" onClick={()=>pinnedResult&&chooseWinner(pinnedResult)}>Choose {pinnedResult?.style}</button><button className="btn-primary" onClick={()=>compareResult&&chooseWinner(compareResult)}>Choose {compareResult?.style}</button></div><div className="flex gap-2 overflow-x-auto pb-2">{results.map(result=><button key={result.id} className={`chip whitespace-nowrap ${result.style===pinned?'bg-black text-white':''}`} onClick={()=>{setPinned(result.style);setCompareIndex(0)}}>{result.style}</button>)}</div></div>}
-      {Object.keys(generation).length>0&&<GenerationProgress styles={selected} generation={generation}/>}
-      {localMode&&failedStyles.length>0&&<button type="button" className="btn-soft w-full" disabled={busy} onClick={retryFailed}>{busy?'Retrying failed styles…':`Retry ${failedStyles.length} failed ${failedStyles.length===1?'style':'styles'}`}</button>}
-      {error&&<p className="text-red-700 text-sm" role="alert">{error}</p>}
-      <BetaFeedback context="Style comparison"/>
+    {step===2&&<section ref={comparisonScreen} className="comparison-screen" aria-label="Compare room designs">
+      <div className="comparison-toolbar">
+        <button type="button" onClick={()=>setStep(1)}>← Upload</button>
+        <span>Compare · {results.length}</span>
+        <button type="button" onClick={()=>setCompareMode(mode=>mode==='pin'?'grid':'pin')}>{compareMode==='pin'?'All designs':'Compare'}</button>
+      </div>
+      {compareMode==='grid'?<div className="comparison-gallery"><div className="compare-grid">{results.map(result=><button type="button" key={result.id} className="compare-grid-card" onClick={()=>{setPinned(result.style);setCompareIndex(0);setCompareMode('pin')}} disabled={busy}><ResultImage result={result}/><div className="p-2 text-left"><b>{result.style}</b></div></button>)}</div></div>:<DesignComparison
+        pinned={pinnedResult}
+        alternative={compareResult}
+        index={Math.min(compareIndex,Math.max(0,alternatives.length-1))}
+        total={alternatives.length}
+        busy={busy}
+        onPrevious={()=>alternatives.length&&setCompareIndex(i=>(i-1+alternatives.length)%alternatives.length)}
+        onNext={()=>alternatives.length&&setCompareIndex(i=>(i+1)%alternatives.length)}
+        onPin={result=>{setPinned(result.style);setCompareIndex(0)}}
+        onChoose={result=>{const winner=results.find(item=>item.id===result.id);if(winner)void chooseWinner(winner)}}
+      />}
+      {(error||failedStyles.length>0)&&<div className="comparison-status">
+        {error&&<p role="alert">{error}</p>}
+        {localMode&&failedStyles.length>0&&<button type="button" disabled={busy} onClick={retryFailed}>{busy?'Retrying…':`Retry ${failedStyles.length} missing styles`}</button>}
+      </div>}
     </section>}
   </div>
 }
 
 function Field({label,children}:{label:string;children:React.ReactNode}){return <div><label className="label">{label}</label>{children}</div>}
 function ResultImage({result}:{result:Result}){return <div className="result-image"><img src={result.generated_image_url} alt={`AI-generated ${result.style} version of the uploaded room`}/><span>AI RESULT · YOUR ROOM</span></div>}
-function ResultPane({title,result,onPin}:{title:string;result:Result;onPin?:()=>void}){return <div className="compare-pane"><div className="compare-pane-head"><span>{title}</span></div>{onPin?<button type="button" className="block w-full text-left" aria-label={`Pin ${result.style} for comparison`} onClick={onPin}><ResultImage result={result}/></button>:<ResultImage result={result}/>}<div className="p-3 font-semibold">{result.style}</div></div>}
 function GenerationProgress({styles,generation}:{styles:string[];generation:GenerationState}){
   const finished=styles.filter(style=>generation[style]?.phase==='done').length;
   return <div className="generation-progress" aria-live="polite"><div className="flex items-center justify-between gap-3"><b>Creating your comparison</b><span>{finished} of {styles.length} ready</span></div><div className="generation-list">{styles.map(style=>{const phase=generation[style]?.phase||'waiting';return <div className={`generation-item ${phase}`} key={style}><i aria-hidden="true"/><span>{style}</span><small>{phase==='waiting'?'Waiting':phase==='generating'?'Creating…':phase==='done'?'Ready':'Try again'}</small></div>})}</div></div>
