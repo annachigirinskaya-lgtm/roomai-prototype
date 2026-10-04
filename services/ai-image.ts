@@ -89,7 +89,7 @@ export function refinementPrompt(instruction:string,hasMask=false){
 
 REQUESTED CHANGE: ${instruction}
 
-${hasMask?'MASKED OBJECT EDIT: the transparent area of the provided mask marks the selected object and its immediate surroundings. You MUST make the requested replacement visibly inside that area. Returning the selected object unchanged is a failed edit. Keep the new object naturally scaled and integrated, and keep opaque areas visually unchanged.':''}
+${hasMask?'MASKED WHOLE-OBJECT EDIT: the transparent area of the provided mask marks the selected object plus a small blending margin. Remove the complete old object and replace its entire visible silhouette, including every connected part. Returning any fragment of the old object, duplicating it, changing only a rectangular crop, or leaving a hard border is a failed edit. Reconstruct exposed background naturally, integrate the new object with realistic contact shadows and lighting, and keep opaque areas visually unchanged.':''}
 
 NON-NEGOTIABLE: make only the requested change. Preserve the exact camera position, crop, perspective, room dimensions, ceiling, floor, lighting direction and the position and size of every door, doorway, passage, window, balcony opening, column, vent, switch, outlet, kitchen cabinet, countertop and fixed fixture. Keep all furniture, decor, materials and colors unchanged unless the request explicitly names them. Never close, cover, move, narrow, resize or invent an architectural opening. Never move a wall or redesign the room layout.
 

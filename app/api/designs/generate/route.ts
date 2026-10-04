@@ -13,7 +13,7 @@ export async function POST(req:NextRequest){
   const {data:{user}}=await s.auth.getUser();
   if(!user)return NextResponse.json({error:'Unauthorized'},{status:401});
   const {projectId,mode='standard_design',styles=[],layout_mode='preserve',reference_image_paths=[]}=await req.json() as GenerateBody;
-  if(!['preserve','rearrange'].includes(layout_mode)||!Array.isArray(reference_image_paths)||reference_image_paths.length>3||reference_image_paths.some(path=>typeof path!=='string'||!path.startsWith(`${user.id}/`)||path.includes('..')))return NextResponse.json({error:'Invalid room references or furniture layout.'},{status:400});
+  if(!['preserve','rearrange'].includes(layout_mode)||!Array.isArray(reference_image_paths)||reference_image_paths.length>2||reference_image_paths.some(path=>typeof path!=='string'||!path.startsWith(`${user.id}/`)||path.includes('..')))return NextResponse.json({error:'Invalid room references or furniture layout.'},{status:400});
   const {data:project,error:pErr}=await s.from('projects').select('*').eq('id',projectId).eq('user_id',user.id).single();
   if(pErr||!project)return NextResponse.json({error:'Project not found'},{status:404});
   const requested=[...new Set(styles)].filter(x=>STYLES.includes(x as never)).slice(0,6);

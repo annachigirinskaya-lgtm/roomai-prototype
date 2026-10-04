@@ -40,7 +40,7 @@ export async function POST(req:NextRequest){
     const image=data.get('image');
     const raw=data.get('project');
     const referenceFiles=data.getAll('references');
-    if(referenceFiles.length>3)return NextResponse.json({error:'Add up to three additional room photos.'},{status:400});
+    if(referenceFiles.length>2)return NextResponse.json({error:'Add up to two additional room photos.'},{status:400});
     if(referenceFiles.some(file=>!(file instanceof File)||file.size>MAX_IMAGE_BYTES||!['image/jpeg','image/png','image/webp'].includes(file.type)))return NextResponse.json({error:'Each additional photo must be a JPG, PNG or WebP smaller than 20 MB.'},{status:400});
     if(!(image instanceof File)||typeof raw!=='string')return NextResponse.json({error:'Room photo and project settings are required.'},{status:400});
     if(image.size>MAX_IMAGE_BYTES)return NextResponse.json({error:'The photo must be smaller than 20 MB.'},{status:413});

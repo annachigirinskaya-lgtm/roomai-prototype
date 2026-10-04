@@ -9,6 +9,7 @@ import DesignComparison from '@/components/DesignComparison';
 const BETA_CONFIGURED=process.env.NEXT_PUBLIC_ROOMAI_BETA_MODE==='true';
 const ACCOUNT_MODE=Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL&&process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
 const MIN_STYLES=2,MAX_STYLES=6;
+const MAX_ROOM_PHOTOS=3;
 type Result={id:string;style:string;generated_image_url:string;local?:boolean};
 type GenerationPhase='waiting'|'generating'|'done'|'failed';
 type GenerationState=Record<string,{phase:GenerationPhase;message?:string}>;
@@ -73,13 +74,25 @@ export default function ProjectForm(){
   }
   async function addReferences(files:File[]){
     if(!files.length||preparingReferences)return;
-    if(references.length+files.length>3){setError('Add up to three additional room photos.');return}
+    const available=MAX_ROOM_PHOTOS-1-references.length;
+    if(available<=0){setError(`You can use up to ${MAX_ROOM_PHOTOS} room photos total.`);return}
     if(files.some(file=>!file.type.startsWith('image/')||file.size>20*1024*1024)){setError('Choose room photos smaller than 20 MB each.');return}
+    const accepted=files.slice(0,available);
     setPreparingReferences(true);setError('');
     try{
-      const ready=await Promise.all(files.map(async file=>{const preview=await compressImage(file);return {id:crypto.randomUUID(),preview,file:dataUrlToFile(preview,'room-reference.jpg')}}));
+      const ready=await Promise.all(accepted.map(async file=>{const preview=await compressImage(file);return {id:crypto.randomUUID(),preview,file:dataUrlToFile(preview,'room-reference.jpg')}}));
       setReferences(current=>[...current,...ready]);
+      if(files.length>available)setError(`Added ${available}. You can use up to ${MAX_ROOM_PHOTOS} room photos total.`);
     }catch{setError('Could not read an additional photo. Please try JPG, PNG or WebP.')}finally{setPreparingReferences(false)}
+  }
+  async function addRoomPhotos(files:File[]){
+    if(!files.length)return;
+    if(!file){
+      await onFile(files[0]);
+      if(files.length>1)await addReferences(files.slice(1));
+      return;
+    }
+    await addReferences(files);
   }
   function toggleStyle(style:string){
     setError('');setSelected(current=>{
@@ -172,11 +185,11 @@ export default function ProjectForm(){
   return <div className="space-y-5">
     <div className="flow-progress">{[1,2].map(n=><i key={n} className={n<=step?'on':''}/>)}</div>
     {step===1&&<section className="upload-step card p-5 md:p-7 space-y-6">
-      <h1 className="text-2xl font-semibold">Upload photo</h1>
-      <label className={`room-upload ${preview?'has-image':''}`}>{preview?<img src={preview} alt="Uploaded room"/>:<div className="text-center"><div className="text-4xl">＋</div><b>Add your room photo</b><div className="text-sm text-stone-500 mt-1">JPG, PNG, HEIC or WebP · up to 20 MB</div></div>}<input className="sr-only" type="file" accept="image/*" onChange={e=>onFile(e.target.files?.[0]||null)}/>{preview&&<span className="upload-chip">Change photo</span>}</label>
+      <h1 className="text-2xl font-semibold">Upload 1–3 room photos</h1>
+      {preview&&<div className="room-photo-controls"><div><b>{1+references.length} of {MAX_ROOM_PHOTOS} photos added</b><p>The first photo sets the result view.</p></div>{references.length<MAX_ROOM_PHOTOS-1&&<label className="room-photo-add">{preparingReferences?'Preparing…':'＋ Add photos'}<input id="reference-photos" type="file" accept="image/*" multiple disabled={busy||preparingReferences} className="sr-only" onChange={event=>{void addReferences(Array.from(event.target.files||[]));event.currentTarget.value=''}}/></label>}</div>}
+      <label className={`room-upload ${preview?'has-image':''}`}>{preview?<img src={preview} alt="Main uploaded room view"/>:<div className="text-center px-4"><div className="text-4xl">＋</div><b>Add up to 3 room photos</b><div className="text-sm text-stone-500 mt-1">Select two or three at once · the first will be the main view</div></div>}<input className="sr-only" type="file" accept="image/*" multiple={!preview} onChange={event=>{if(preview)void onFile(event.target.files?.[0]||null);else void addRoomPhotos(Array.from(event.target.files||[]));event.currentTarget.value=''}}/>{preview&&<span className="upload-chip">Change main photo</span>}</label>
       {preview&&<div className="space-y-3">
-        <div className="flex items-center justify-between gap-2"><label className="font-medium" htmlFor="reference-photos">Additional angles · {references.length}/3</label><label className="btn-soft cursor-pointer text-sm">{preparingReferences?'Preparing…':'＋ Add photos'}<input id="reference-photos" type="file" accept="image/*" multiple disabled={busy||preparingReferences||references.length>=3} className="sr-only" onChange={event=>{void addReferences(Array.from(event.target.files||[]));event.target.value=''}}/></label></div>
-        <p className="text-sm text-stone-500">Optional: show the same room from other corners. The main photo sets the result view.</p>
+        {references.length===0&&<p className="text-sm text-stone-500">Optional: add one or two more angles of the same room. You can select both together.</p>}
         {references.length>0&&<div className="grid grid-cols-3 gap-2">{references.map((reference,index)=><div key={reference.id} className="relative"><img src={reference.preview} alt={`Additional room angle ${index+1}`} className="aspect-[3/4] w-full rounded-xl object-cover"/><button type="button" disabled={busy||preparingReferences} aria-label={`Remove additional angle ${index+1}`} onClick={()=>setReferences(current=>current.filter(item=>item.id!==reference.id))} className="absolute right-1 top-1 h-9 w-9 rounded-full bg-black/75 text-white">×</button></div>)}</div>}
         <Field label="Furniture layout"><select aria-label="Furniture layout" className="input" value={form.layout_mode} disabled={busy} onChange={event=>setForm({...form,layout_mode:event.target.value as 'preserve'|'rearrange'})}><option value="preserve">Keep furniture in its current position</option><option value="rearrange">Suggest a new furniture arrangement</option></select></Field>
       </div>}

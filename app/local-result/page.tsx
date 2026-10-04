@@ -32,9 +32,14 @@ async function createSelectionMask(image:Blob,polygon:number[][]){
   const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;
   const context=canvas.getContext('2d');
   if(!context){bitmap.close();throw new Error('Could not prepare the selected area.')}
+  const center=polygon.reduce((sum,[x,y])=>[sum[0]+x,sum[1]+y],[0,0]).map(total=>total/polygon.length);
+  const expandedPolygon=polygon.map(([x,y])=>[
+    Math.max(0,Math.min(100,center[0]+(x-center[0])*1.14)),
+    Math.max(0,Math.min(100,center[1]+(y-center[1])*1.14)),
+  ]);
   context.fillStyle='#000';context.fillRect(0,0,canvas.width,canvas.height);
   context.globalCompositeOperation='destination-out';context.beginPath();
-  polygon.forEach(([x,y],index)=>{const px=x/100*canvas.width,py=y/100*canvas.height;if(index===0)context.moveTo(px,py);else context.lineTo(px,py)});
+  expandedPolygon.forEach(([x,y],index)=>{const px=x/100*canvas.width,py=y/100*canvas.height;if(index===0)context.moveTo(px,py);else context.lineTo(px,py)});
   context.closePath();context.fill();bitmap.close();
   return await new Promise<Blob>((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Could not prepare the selected area.')),'image/png'));
 }
@@ -109,7 +114,7 @@ export default function LocalResultPage(){
   function searchLinks(category:string,label:string){
     const query=`${design?.style||'interior'} ${project.color_palette||'neutral'} ${category} for living room`;
     const q=encodeURIComponent(query);
-    return {category,label,x:selectedItem?.x||50,y:selectedItem?.y||50,query,storeLinks:[{store:'Amazon',url:`https://www.amazon.com/s?k=${q}`},{store:'Walmart',url:`https://www.walmart.com/search?q=${q}`}]};
+    return {category,label,x:selectedItem?.x||50,y:selectedItem?.y||50,polygon:selectedItem?.polygon,query,storeLinks:[{store:'Amazon',url:`https://www.amazon.com/s?k=${q}`},{store:'Walmart',url:`https://www.walmart.com/search?q=${q}`}]};
   }
 
   async function selectImageItem(event:MouseEvent<HTMLButtonElement>){
@@ -136,7 +141,7 @@ export default function LocalResultPage(){
     if(!selectedItem.polygon?.length){setIdentifyError('Tap the object again to select its outline before replacing it.');return}
     setSelectedPreset(`Replace ${selectedItem.label}`);
     setUseSelectionMask(true);
-    setInstruction(`MANDATORY VISIBLE REPLACEMENT: replace the selected ${selectedItem.category} located around ${selectedItem.x.toFixed(1)}% from the left and ${selectedItem.y.toFixed(1)}% from the top with ${detail}. The replacement must be clearly different in silhouette, material, color or pattern; do not return the original selected object unchanged. Keep it in the same functional area and preserve the exact room, architecture, camera, lighting and every other item unchanged.`);
+    setInstruction(`MANDATORY WHOLE-OBJECT REPLACEMENT: completely remove the entire selected ${selectedItem.category} located around ${selectedItem.x.toFixed(1)}% from the left and ${selectedItem.y.toFixed(1)}% from the top, then replace it edge-to-edge with ${detail}. Replace its complete silhouette, including every visible leaf, branch, cushion, leg or other connected part. Do not leave fragments of the old object, duplicate it, paste a rectangular patch, or create a hard seam. Reconstruct any newly exposed background naturally. The replacement must be clearly different while remaining correctly scaled in the same functional area. Preserve the exact room, architecture, camera, lighting and every other item unchanged.`);
   }
 
   function chooseProductImage(file?:File){
@@ -252,10 +257,10 @@ export default function LocalResultPage(){
       <div className="kicker">Saved variations</div>
       <h2 className="text-2xl font-semibold mt-2">Compare your versions</h2>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-5">
-        {versions.map(version=><Link key={version.id} href={`/local-result?id=${encodeURIComponent(version.id)}`} className={`overflow-hidden rounded-2xl border-2 ${version.current?'border-black':'border-transparent bg-stone-100'}`}>
+        {versions.map(version=><a key={version.id} href={`/local-result?id=${encodeURIComponent(version.id)}`} aria-current={version.current?'page':undefined} className={`overflow-hidden rounded-2xl border-2 ${version.current?'border-black':'border-transparent bg-stone-100'}`}>
           <img src={version.url} alt={version.label} className="aspect-[3/2] w-full object-cover"/>
-          <div className="p-3 text-sm font-medium">{version.current?'Selected · ':''}{version.label}</div>
-        </Link>)}
+          <div className="p-3 text-sm font-medium">{version.current?'Showing now · ':''}{version.label}</div>
+        </a>)}
       </div>
     </section>}
 
