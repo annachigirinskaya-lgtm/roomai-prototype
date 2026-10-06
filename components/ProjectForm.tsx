@@ -35,7 +35,7 @@ export default function ProjectForm(){
   const objectUrls=useRef<string[]>([]);
   const betaToken=useRef('');
   const comparisonScreen=useRef<HTMLElement|null>(null);
-  const [form,setForm]=useState({name:'My room',room_type:'Living Room',style:'Modern',color_palette:'Warm White',custom_colors:'',budget:1500,budget_mode:'balanced',keep_items:'',replace_items:'',notes:'',layout_mode:'preserve' as 'preserve'|'rearrange'});
+  const [form,setForm]=useState({name:'My room',room_type:'Living Room',style:'Modern',color_palette:'Warm White',custom_colors:'',budget:'1500',budget_mode:'balanced',keep_items:'',replace_items:'',notes:'',layout_mode:'preserve' as 'preserve'|'rearrange'});
   const alternatives=useMemo(()=>results.filter(x=>x.style!==pinned),[results,pinned]);
   const pinnedResult=results.find(x=>x.style===pinned)||results[0];
   const compareResult=alternatives[Math.min(compareIndex,Math.max(0,alternatives.length-1))];
@@ -104,17 +104,24 @@ export default function ProjectForm(){
   function setStylePhase(style:string,phase:GenerationPhase,message?:string){
     setGeneration(current=>({...current,[style]:{phase,message}}));
   }
+  function projectSettings(style:string){
+    return {...form,budget:Number(form.budget),style,source_image_url:''};
+  }
+  function updateBudget(value:string){
+    const digits=value.replace(/\D/g,'').replace(/^0+(?=\d)/,'');
+    setForm(current=>({...current,budget:digits}));
+  }
   async function generateLocalStyles(styles:string[],uploadFile:File){
     const completed:Result[]=[];const failures:{style:string;message:string}[]=[];
     for(let i=0;i<styles.length;i+=2){
       const batch=styles.slice(i,i+2);
       batch.forEach(style=>setStylePhase(style,'generating'));
       const generated=await Promise.allSettled(batch.map(async style=>{
-        const body=new FormData();body.append('image',uploadFile);references.forEach(reference=>body.append('references',reference.file));body.append('project',JSON.stringify({...form,budget:Number(form.budget),style,source_image_url:''}));
+        const body=new FormData();body.append('image',uploadFile);references.forEach(reference=>body.append('references',reference.file));body.append('project',JSON.stringify(projectSettings(style)));
         const response=await fetch('/api/designs/quick-generate',{method:'POST',headers:betaToken.current?{'x-roomai-beta-token':betaToken.current}:{},body});
         if(!response.ok){let message='Could not generate this style.';try{message=(await response.json()).error||message}catch{}throw new Error(message)}
         const image=await response.blob();const id=crypto.randomUUID();
-        await saveLocalDesign({id,style,createdAt:Date.now(),project:{...form,comparedStyles:selected},image});
+        await saveLocalDesign({id,style,createdAt:Date.now(),project:{...projectSettings(style),comparedStyles:selected},image});
         const generatedImageUrl=URL.createObjectURL(image);objectUrls.current.push(generatedImageUrl);
         return {id,style,generated_image_url:generatedImageUrl,local:true} satisfies Result;
       }));
@@ -133,6 +140,7 @@ export default function ProjectForm(){
   }
   async function generateComparison(){
     if(!file)return setError('Upload a room photo first.');
+    if(!form.budget||Number(form.budget)<50)return setError('Enter a furniture and decor budget of at least $50.');
     if(selected.length<MIN_STYLES||selected.length>MAX_STYLES)return setError('Choose 2–6 styles.');
     setBusy(true);setError('');
     setResults([]);setCompareMode('pin');setCompareIndex(0);setGeneration(Object.fromEntries(selected.map(style=>[style,{phase:'waiting'}])));
@@ -193,7 +201,7 @@ export default function ProjectForm(){
         {references.length>0&&<div className="grid grid-cols-3 gap-2">{references.map((reference,index)=><div key={reference.id} className="relative"><img src={reference.preview} alt={`Additional room angle ${index+1}`} className="aspect-[3/4] w-full rounded-xl object-cover"/><button type="button" disabled={busy||preparingReferences} aria-label={`Remove additional angle ${index+1}`} onClick={()=>setReferences(current=>current.filter(item=>item.id!==reference.id))} className="absolute right-1 top-1 h-9 w-9 rounded-full bg-black/75 text-white">×</button></div>)}</div>}
         <Field label="Furniture layout"><select aria-label="Furniture layout" className="input" value={form.layout_mode} disabled={busy} onChange={event=>setForm({...form,layout_mode:event.target.value as 'preserve'|'rearrange'})}><option value="preserve">Keep furniture in its current position</option><option value="rearrange">Suggest a new furniture arrangement</option></select></Field>
       </div>}
-      <div className="grid md:grid-cols-2 gap-4"><Field label="Project name"><input className="input" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></Field><Field label="Room type"><select className="input" value={form.room_type} onChange={e=>setForm({...form,room_type:e.target.value})}>{ROOM_TYPES.map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Color palette"><select className="input" value={form.color_palette} onChange={e=>setForm({...form,color_palette:e.target.value})}>{PALETTES.map(x=><option key={x}>{x}</option>)}</select></Field>{form.color_palette==='Custom'&&<Field label="Your colors"><input className="input" value={form.custom_colors} onChange={e=>setForm({...form,custom_colors:e.target.value})} placeholder="Cream, walnut, olive…"/></Field>}<Field label="Budget ($)"><input className="input" type="number" min="50" step="10" value={form.budget} onChange={e=>setForm({...form,budget:Number(e.target.value)})}/></Field><Field label="Keep these items"><textarea className="input min-h-24" value={form.keep_items} onChange={e=>setForm({...form,keep_items:e.target.value})} placeholder="Sofa, flooring, fireplace…"/></Field><Field label="Replace or add"><textarea className="input min-h-24" value={form.replace_items} onChange={e=>setForm({...form,replace_items:e.target.value})} placeholder="Furniture, lighting, curtains…"/></Field></div>
+      <div className="grid md:grid-cols-2 gap-4"><Field label="Project name"><input className="input" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></Field><Field label="Room type"><select className="input" value={form.room_type} onChange={e=>setForm({...form,room_type:e.target.value})}>{ROOM_TYPES.map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Color palette"><select className="input" value={form.color_palette} onChange={e=>setForm({...form,color_palette:e.target.value})}>{PALETTES.map(x=><option key={x}>{x}</option>)}</select></Field>{form.color_palette==='Custom'&&<Field label="Your colors"><input className="input" value={form.custom_colors} onChange={e=>setForm({...form,custom_colors:e.target.value})} placeholder="Cream, walnut, olive…"/></Field>}<Field label="Budget for furniture & decor ($)"><input aria-label="Budget for furniture and decor in dollars" className="input" type="text" inputMode="numeric" pattern="[0-9]*" placeholder="800" value={form.budget} onFocus={event=>event.currentTarget.select()} onChange={event=>updateBudget(event.target.value)}/><p className="mt-2 text-xs text-stone-500">New furniture, lighting, textiles and decor will be planned close to this total.</p></Field><Field label="Keep these items"><textarea className="input min-h-24" value={form.keep_items} onChange={e=>setForm({...form,keep_items:e.target.value})} placeholder="Sofa, flooring, fireplace…"/></Field><Field label="Replace or add"><textarea className="input min-h-24" value={form.replace_items} onChange={e=>setForm({...form,replace_items:e.target.value})} placeholder="Furniture, lighting, curtains…"/></Field></div>
       <div><div className="flex items-end justify-between gap-3"><div><div className="label mb-1">Choose 2–6 styles</div><p className="text-sm text-stone-500">{selected.length} selected · choose 2 for a quick test or 6 for the full comparison.</p></div><button type="button" className="text-sm underline" onClick={()=>setSelected(STYLES.slice(0,6))}>Select first 6</button></div><div className="style-grid mt-4">{STYLES.map(style=><button type="button" key={style} onClick={()=>toggleStyle(style)} className={`style-card ${selected.includes(style)?'selected':''}`}><img className="style-photo" src={STYLE_META[style].image} alt={`${style} style reference`}/><div className="p-3"><div className="flex items-center justify-between gap-2"><b>{style}</b>{selected.includes(style)&&<span className="check">✓</span>}</div><div className="text-xs text-stone-500 mt-1">{STYLE_META[style].mood}</div><div className="text-[11px] leading-snug text-stone-500 mt-2 line-clamp-3">{STYLE_META[style].guidance}</div><div className="inspiration-label">Style reference</div></div></button>)}</div></div>
       {error&&<p className="text-red-700 text-sm" role="alert">{error}</p>}
       <button type="button" disabled={busy||preparingReferences||!betaAccess} className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-50" onClick={generateComparison}>{busy?'Generating and saving your room designs…':`Generate ${selected.length} AI designs`}</button>

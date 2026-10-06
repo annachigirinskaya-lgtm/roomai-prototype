@@ -48,7 +48,9 @@ export async function POST(req:NextRequest){
     const parsed=JSON.parse(raw) as ProjectInput;
     if(parsed.layout_mode!==undefined&&!['preserve','rearrange'].includes(parsed.layout_mode))return NextResponse.json({error:'Choose a valid furniture layout option.'},{status:400});
     if(!STYLES.includes(parsed.style as never))return NextResponse.json({error:'Choose a valid interior style.'},{status:400});
-    const project:ProjectInput={...parsed,budget:Number(parsed.budget)||1500,source_image_url:''};
+    const budget=Number(parsed.budget);
+    if(!Number.isFinite(budget)||budget<50)return NextResponse.json({error:'Enter a furniture and decor budget of at least $50.'},{status:400});
+    const project:ProjectInput={...parsed,budget,source_image_url:''};
     const references=await Promise.all((referenceFiles as File[]).map(async file=>({source:Buffer.from(await file.arrayBuffer()),mime:file.type})));
     const output=await generateFromRoom(Buffer.from(await image.arrayBuffer()),image.type,project,[],references);
     return new Response(new Uint8Array(output),{status:200,headers:{'content-type':'image/png','cache-control':'private, no-store','x-roomai-style':encodeURIComponent(project.style)}});
