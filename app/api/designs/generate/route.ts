@@ -6,13 +6,14 @@ import { designPrompt, generateFromRoom, IMAGE_MODEL, IMAGE_QUALITY, IMAGE_SIZE 
 import { CREDIT_COSTS, STYLES } from '@/lib/catalog';
 
 export const maxDuration=300;
-type GenerateBody={projectId:string;mode?:keyof typeof CREDIT_COSTS;styles?:string[]};
+type GenerateBody={projectId:string;mode?:keyof typeof CREDIT_COSTS;styles?:string[];layout_mode?:'preserve'|'rearrange';reference_image_paths?:string[]};
 
 export async function POST(req:NextRequest){
   const s=await createClient();
   const {data:{user}}=await s.auth.getUser();
   if(!user)return NextResponse.json({error:'Unauthorized'},{status:401});
-  const {projectId,mode='standard_design',styles=[]}=await req.json() as GenerateBody;
+  const {projectId,mode='standard_design',styles=[],layout_mode='preserve',reference_image_paths=[]}=await req.json() as GenerateBody;
+  if(!['preserve','rearrange'].includes(layout_mode)||!Array.isArray(reference_image_paths)||reference_image_paths.length>2||reference_image_paths.some(path=>typeof path!=='string'||!path.startsWith(`${user.id}/`)||path.includes('..')))return NextResponse.json({error:'Invalid room references or furniture layout.'},{status:400});
   const {data:project,error:pErr}=await s.from('projects').select('*').eq('id',projectId).eq('user_id',user.id).single();
   if(pErr||!project)return NextResponse.json({error:'Project not found'},{status:404});
   const requested=[...new Set(styles)].filter(x=>STYLES.includes(x as never)).slice(0,6);
@@ -31,6 +32,7 @@ export async function POST(req:NextRequest){
   if(fErr||!file)return NextResponse.json({error:'Could not read source image'},{status:500});
   const source=Buffer.from(await file.arrayBuffer());
   const mime=file.type||'image/jpeg';
+  const references=await Promise.all(reference_image_paths.map(async path=>{const {data,error}=await admin.storage.from('room-images').download(path);if(error||!data)throw new Error('Could not read an additional room photo.');if(data.size>20*1024*1024||!['image/jpeg','image/png','image/webp'].includes(data.type))throw new Error('Invalid additional room photo.');return {source:Buffer.from(await data.arrayBuffer()),mime:data.type}}));
   const stylesToGenerate=isComparison?requested:[project.style];
   const products=isComparison||mode==='standard_design'?[]:await buildShoppingList({...project,source_image_url:project.source_image_url||''});
   const total=products.reduce((n,x)=>n+x.price,0);
@@ -38,8 +40,8 @@ export async function POST(req:NextRequest){
   for(let i=0;i<stylesToGenerate.length;i+=2){
     const batch=stylesToGenerate.slice(i,i+2);
     const results=await Promise.allSettled(batch.map(async style=>{
-      const styledProject={...project,style,source_image_url:project.source_image_url||''};
-      const output=await generateFromRoom(source,mime,styledProject,products);
+      const styledProject={...project,style,layout_mode,source_image_url:project.source_image_url||''};
+      const output=await generateFromRoom(source,mime,styledProject,products,references);
       const imagePath=`${user.id}/${project.id}/${crypto.randomUUID()}.png`;
       const {error:uErr}=await admin.storage.from('generated-designs').upload(imagePath,output,{contentType:'image/png',upsert:false});
       if(uErr)throw uErr;

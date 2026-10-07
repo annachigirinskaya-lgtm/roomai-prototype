@@ -1,9 +1,14 @@
 import OpenAI, { toFile } from 'openai';
 import { Product, ProjectInput } from '@/lib/types';
 import { STYLE_GUIDANCE } from '@/lib/catalog';
+import { preserveOutsideMask } from './masked-edit';
 export function designPrompt(p:ProjectInput,products:Product[]){const shopping=products.map(x=>`${x.category}: ${x.title} (${x.store}, $${x.price})`).join('; ');const signature=STYLE_GUIDANCE[p.style]||p.style;return `Edit the PROVIDED PHOTO into a complete, photorealistic, professionally designed and fully furnished ${p.room_type}. This is an image edit, not a request for a new or similar room: the output must remain unmistakably the exact same room and camera view.
 
 NON-NEGOTIABLE ROOM FIDELITY: before designing, inspect and internally inventory every visible structural element in the source photo. Reproduce every hinged door, sliding door, doorway, passage, window, balcony opening, column, vent, switch, outlet, ceiling edge, floor boundary, kitchen cabinet, countertop and fixed fixture one-for-one in the identical position, size and perspective. Preserve the exact room geometry, dimensions, wall lengths, camera position, field of view, ceiling height, flooring and kitchen footprint. The before and after images must align if overlaid. Never remove, cover, narrow, move, resize or replace an existing door, doorway, window, balcony opening or kitchen element. Never build a feature wall, marble slab, panel, cabinet, fireplace, television or furniture across an opening. Use only genuinely solid wall areas for wall treatments and place furniture within the existing free floor area. Never invent a different property.
+
+FURNITURE LAYOUT: ${p.layout_mode==='rearrange'?'The client explicitly permits a new furniture arrangement. Propose a functional arrangement only inside the existing room; preserve architecture and keep all doors, windows and walkways accessible.':'KEEP THE ORIGINAL FURNITURE ARRANGEMENT. Preserve the exact position, orientation, footprint and scale of every existing major furniture item. In particular, keep the bed headboard against the same wall, its long axis in the same direction and the same clearances around it. Never rotate the bed, push it into another corner, move a sofa or relocate a table. You may update their materials, upholstery, headboard design, bedding and decorative styling while retaining their anchors and orientation. Add new decor only in genuinely available space.'}
+
+MULTIPLE ROOM VIEWS: when additional input images are provided, the FIRST image is the primary camera view and defines the output perspective and aspect ratio. All later images show other angles of this SAME room and are spatial references only. Cross-check doors, windows, furniture anchors and wall relationships against them. Do not combine camera views, produce a collage, copy another angle as the output, or infer new architecture from a different viewpoint.
 
 DESIGN INTENSITY: make a substantial, clearly visible whole-room transformation worthy of a professional interior designer. Do not merely add a basic sofa, rug and coffee table. Build a deliberate composition with a strong focal point, layered lighting, correctly scaled furniture, window treatments, coordinated textiles, wall treatment or millwork where appropriate, art, plants and styled accessories. The room must feel finished, memorable and editorial while remaining physically buildable. Do not leave it sparse, builder-basic, generic, sterile or unfinished.
 
@@ -13,9 +18,9 @@ LIVING ROOM FUNCTION: if this is a living room, the finished design must include
 
 COLOR: ${p.color_palette}${p.custom_colors?`; requested custom colors: ${p.custom_colors}`:''}. Use this palette throughout furniture, textiles, finishes and accents with tonal depth rather than making everything one flat color.
 
-BUDGET: target $${p.budget}; mode: ${p.budget_mode}. The budget controls the price tier and material substitutions, NOT the completeness, creativity or visual richness of the design. Use affordable look-alikes and achievable treatments when necessary instead of simplifying the design.
+BUDGET: the hard target is approximately $${p.budget} TOTAL for all NEW movable furniture, lighting, rugs, curtains, bedding, art, plants, accessories and applied decorative finishes shown in this redesign. Treat that figure as the room's combined shopping budget, not a per-item allowance. Internally allocate realistic current mass-market prices before rendering and keep the implied combined purchase total between 85% and 100% of $${p.budget}. Exclude tax, delivery, installation labor and existing items that remain in the room. Do not show any single new item whose plausible retail price would consume nearly the whole budget unless the client explicitly requested that item. For a limited budget, retain and restyle usable expensive existing pieces; use thriftable, flat-pack, peel-and-stick, paint, textile and affordable look-alike solutions. Do not depict custom built-ins, genuine slab marble, designer furniture or costly structural work that cannot realistically fit this total. The budget controls the price tier and material substitutions, NOT the completeness, creativity or visual richness of the design: create a polished, layered, fully resolved room through smart styling and achievable treatments rather than leaving it sparse.
 
-CLIENT REQUIREMENTS: keep these existing items visibly recognizable: ${p.keep_items||'none specified'}. Replace or add: ${p.replace_items||'all furniture, lighting, textiles, wall treatments and decor needed for a complete design'}. Additional notes: ${p.notes||'none'}. ${shopping?`Use this real-product plan as visual inspiration: ${shopping}.`:''}
+CLIENT REQUIREMENTS: keep these existing items visibly recognizable: ${p.keep_items||'none specified'}. Replace or add: ${p.replace_items||'only the furniture, lighting, textiles, wall treatments and decor needed for a complete design; preserve serviceable major pieces whenever replacing them would break the total budget'}. Additional notes: ${p.notes||'none'}. ${shopping?`Use this real-product plan as visual inspiration: ${shopping}.`:''}
 
 FINAL ARCHITECTURE CHECK: compare the proposed result against the source photo before rendering. If the count, position or dimensions of any door, doorway, window, balcony opening, column, kitchen counter or fixed element differ, correct the design. Style the room around the architecture; never redesign the architecture itself.
 
@@ -61,13 +66,14 @@ function outputSize(source:Buffer,mime:string,model:string){
   return `${targetWidth}x${targetHeight}`;
 }
 
-export async function generateFromRoom(source:Buffer,mime:string,p:ProjectInput,products:Product[]){
+export async function generateFromRoom(source:Buffer,mime:string,p:ProjectInput,products:Product[],references:{source:Buffer;mime:string}[]=[]){
   if(!process.env.OPENAI_API_KEY)throw new Error('OPENAI_API_KEY missing');
   const client=new OpenAI({apiKey:process.env.OPENAI_API_KEY});
-  const file=await toFile(source,'room',{type:mime});
+  const file=await toFile(source,'primary-room',{type:mime});
+  const referenceFiles=await Promise.all(references.map((reference,index)=>toFile(reference.source,`room-reference-${index+1}`,{type:reference.mime})));
   const res=await client.images.edit({
     model:IMAGE_MODEL,
-    image:file,
+    image:referenceFiles.length?[file,...referenceFiles]:file,
     prompt:designPrompt(p,products),
     size:outputSize(source,mime,IMAGE_MODEL),
     quality:IMAGE_QUALITY,
@@ -83,7 +89,7 @@ export function refinementPrompt(instruction:string,hasMask=false){
 
 REQUESTED CHANGE: ${instruction}
 
-${hasMask?'MASKED OBJECT EDIT: the transparent area of the provided mask marks the selected object and its immediate surroundings. You MUST make the requested replacement visibly inside that area. Returning the selected object unchanged is a failed edit. Keep the new object naturally scaled and integrated, and keep opaque areas visually unchanged.':''}
+${hasMask?'MASKED WHOLE-OBJECT EDIT: the transparent area of the provided mask marks the selected object and, for a move request, its approved destination. Follow the request exactly: either replace the entire object or move that SAME recognizable object to the destination. For relocation, remove the complete object from its old position, reconstruct the exposed wall or floor naturally, and place it only at the requested destination with correct scale, perspective, orientation, contact shadows and lighting. Never leave fragments, duplicate the object, alter only a rectangular crop, or create a hard border. Keep opaque areas visually unchanged.':''}
 
 NON-NEGOTIABLE: make only the requested change. Preserve the exact camera position, crop, perspective, room dimensions, ceiling, floor, lighting direction and the position and size of every door, doorway, passage, window, balcony opening, column, vent, switch, outlet, kitchen cabinet, countertop and fixed fixture. Keep all furniture, decor, materials and colors unchanged unless the request explicitly names them. Never close, cover, move, narrow, resize or invent an architectural opening. Never move a wall or redesign the room layout.
 
@@ -108,7 +114,8 @@ export async function refineRoomDesign(source:Buffer,mime:string,instruction:str
   });
   const b64=res.data?.[0]?.b64_json;
   if(!b64)throw new Error('No revised image returned');
-  return Buffer.from(b64,'base64');
+  const generated=Buffer.from(b64,'base64');
+  return mask?preserveOutsideMask(source,generated,mask):generated;
 }
 
 export async function placeProductInRoom(source:Buffer,mime:string,product:Buffer,productMime:string,category:string,x:number,y:number){

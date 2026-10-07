@@ -3,9 +3,12 @@
 import Link from 'next/link';
 import { FormEvent, MouseEvent, useEffect, useState } from 'react';
 import { getLocalDesign, getLocalDesigns, saveLocalDesign, type LocalDesign } from '@/lib/local-designs';
+import BetaFeedback from '@/components/BetaFeedback';
 
 type DesignVersion={id:string;label:string;url:string;current:boolean};
-type SelectedItem={category:string;label:string;x:number;y:number;query:string;storeLinks:{store:string;url:string}[]};
+type SelectedItem={category:string;label:string;x:number;y:number;query:string;polygon?:number[][];storeLinks:{store:string;url:string}[]};
+type Point={x:number;y:number};
+type MoveStage='off'|'choose-item'|'choose-place'|'ready';
 
 const ITEM_CATEGORIES=[
   ['vase','Vase'],['flower arrangement','Flowers'],['decorative bowl','Decorative bowl'],['tray','Tray'],['candle','Candle'],['books','Books'],['sculpture','Sculpture'],['throw pillow','Pillow'],['blanket','Blanket'],['rug','Rug'],['sofa','Sofa'],['armchair','Armchair'],['ottoman','Ottoman'],['coffee table','Coffee table'],['side table','Side table'],['dining table','Dining table'],['dining chair','Dining chair'],['bar stool','Bar stool'],['tv','TV'],['tv console','TV console'],['floor lamp','Floor lamp'],['table lamp','Table lamp'],['ceiling light','Ceiling light'],['chandelier','Chandelier'],['curtains','Curtains'],['wall art','Wall art'],['mirror','Mirror'],['indoor plant','Plant'],['plant pot','Plant pot'],['wall panel','Wall panel'],['fireplace','Fireplace'],['shelving','Shelving'],['cabinet','Cabinet'],['decor accessory','Other decor'],
@@ -25,27 +28,36 @@ async function cropAroundPoint(image:Blob,x:number,y:number){
   return await new Promise<Blob>((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Could not prepare this image area.')),'image/png'));
 }
 
-function selectionRadius(category:string){
-  const small=['vase','flower arrangement','decorative bowl','tray','candle','books','sculpture','table lamp','plant pot','decor accessory'];
-  const soft=['throw pillow','blanket'];
-  const large=['rug','sofa','curtains','wall panel','fireplace','shelving','cabinet'];
-  if(small.includes(category))return {x:0.09,y:0.14};
-  if(soft.includes(category))return {x:0.16,y:0.18};
-  if(large.includes(category))return {x:0.28,y:0.30};
-  return {x:0.18,y:0.22};
-}
-
-async function createSelectionMask(image:Blob,x:number,y:number,category:string){
+async function createSelectionMask(image:Blob,polygon:number[][],destination?:Point){
+  if(polygon.length<3)throw new Error('Tap the object again to select its outline before replacing it.');
   const bitmap=await createImageBitmap(image);
   const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;
   const context=canvas.getContext('2d');
   if(!context){bitmap.close();throw new Error('Could not prepare the selected area.')}
-  context.fillStyle='rgba(0,0,0,1)';context.fillRect(0,0,canvas.width,canvas.height);
-  const radius=selectionRadius(category);
-  context.globalCompositeOperation='destination-out';
-  context.beginPath();
-  context.ellipse((x/100)*canvas.width,(y/100)*canvas.height,canvas.width*radius.x,canvas.height*radius.y,0,0,Math.PI*2);
-  context.fill();bitmap.close();
+  const center=polygon.reduce((sum,[x,y])=>[sum[0]+x,sum[1]+y],[0,0]).map(total=>total/polygon.length);
+  const expandedPolygon=polygon.map(([x,y])=>[
+    Math.max(0,Math.min(100,center[0]+(x-center[0])*1.14)),
+    Math.max(0,Math.min(100,center[1]+(y-center[1])*1.14)),
+  ]);
+  context.fillStyle='#000';context.fillRect(0,0,canvas.width,canvas.height);
+  const cutOut=(points:number[][])=>{
+    context.globalCompositeOperation='destination-out';context.beginPath();
+    points.forEach(([x,y],index)=>{const px=x/100*canvas.width,py=y/100*canvas.height;if(index===0)context.moveTo(px,py);else context.lineTo(px,py)});
+    context.closePath();context.fill();
+  };
+  cutOut(expandedPolygon);
+  if(destination){
+    const xs=expandedPolygon.map(([x])=>x),ys=expandedPolygon.map(([,y])=>y);
+    const halfSide=Math.max(Math.max(...xs)-Math.min(...xs),Math.max(...ys)-Math.min(...ys))*.68;
+    const destinationPolygon=[
+      [destination.x-halfSide,destination.y-halfSide],
+      [destination.x+halfSide,destination.y-halfSide],
+      [destination.x+halfSide,destination.y+halfSide],
+      [destination.x-halfSide,destination.y+halfSide],
+    ].map(([x,y])=>[Math.max(0,Math.min(100,x)),Math.max(0,Math.min(100,y))]);
+    cutOut(destinationPolygon);
+  }
+  bitmap.close();
   return await new Promise<Blob>((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Could not prepare the selected area.')),'image/png'));
 }
 
@@ -88,6 +100,8 @@ export default function LocalResultPage(){
   const [productPreviewUrl,setProductPreviewUrl]=useState('');
   const [placingProduct,setPlacingProduct]=useState(false);
   const [productError,setProductError]=useState('');
+  const [moveStage,setMoveStage]=useState<MoveStage>('off');
+  const [moveDestination,setMoveDestination]=useState<Point>();
 
   useEffect(()=>{
     const objectUrls:string[]=[];
@@ -119,7 +133,7 @@ export default function LocalResultPage(){
   function searchLinks(category:string,label:string){
     const query=`${design?.style||'interior'} ${project.color_palette||'neutral'} ${category} for living room`;
     const q=encodeURIComponent(query);
-    return {category,label,x:selectedItem?.x||50,y:selectedItem?.y||50,query,storeLinks:[{store:'Amazon',url:`https://www.amazon.com/s?k=${q}`},{store:'Walmart',url:`https://www.walmart.com/search?q=${q}`}]};
+    return {category,label,x:selectedItem?.x||50,y:selectedItem?.y||50,polygon:selectedItem?.polygon,query,storeLinks:[{store:'Amazon',url:`https://www.amazon.com/s?k=${q}`},{store:'Walmart',url:`https://www.walmart.com/search?q=${q}`}]};
   }
 
   async function selectImageItem(event:MouseEvent<HTMLButtonElement>){
@@ -127,6 +141,12 @@ export default function LocalResultPage(){
     const box=event.currentTarget.getBoundingClientRect();
     const x=((event.clientX-box.left)/box.width)*100;
     const y=((event.clientY-box.top)/box.height)*100;
+    if((moveStage==='choose-place'||moveStage==='ready')&&selectedItem){
+      const destination={x,y};
+      setMoveDestination(destination);setMoveStage('ready');setSelectedPreset(`Move ${selectedItem.label}`);setUseSelectionMask(true);setEditError('');
+      setInstruction(`MOVE THE EXISTING ${selectedItem.category.toUpperCase()}: remove the complete selected ${selectedItem.category} from its current position around ${selectedItem.x.toFixed(1)}% from the left and ${selectedItem.y.toFixed(1)}% from the top, and place that SAME item around ${x.toFixed(1)}% from the left and ${y.toFixed(1)}% from the top. Preserve its recognizable design, color, material and approximate scale; change only its position and rotate it only as needed to sit naturally against the target wall or floor. Reconstruct the old location as the correct unobstructed wall or floor. Keep every other object unchanged. Never move, remove, cover or resize doors, windows, passages, vents, outlets or fixed architecture, and keep all walkways usable.`);
+      return;
+    }
     setIdentifying(true);setIdentifyError('');setSelectedItem(undefined);
     try{
       const crop=await cropAroundPoint(design.image,x,y);
@@ -135,17 +155,27 @@ export default function LocalResultPage(){
       const result=await response.json();
       if(!response.ok)throw new Error(result.error||'Could not identify this item.');
       setSelectedItem(result);
+      if(moveStage==='choose-item')setMoveStage('choose-place');
     }catch(reason){
       setSelectedItem({category:'decor',label:'Choose item below',x,y,query:'',storeLinks:[]});
       setIdentifyError(reason instanceof Error?reason.message:'Choose the item manually below.');
     }finally{setIdentifying(false)}
   }
 
+  function toggleMoveMode(){
+    if(moveStage==='off'){
+      setMoveStage('choose-item');setSelectedItem(undefined);setMoveDestination(undefined);setIdentifyError('');setEditError('');
+    }else{
+      setMoveStage('off');setSelectedItem(undefined);setMoveDestination(undefined);setInstruction('');setSelectedPreset('');setUseSelectionMask(false);setIdentifyError('');setEditError('');
+    }
+  }
+
   function chooseSwap(detail:string){
     if(!selectedItem)return;
+    if(!selectedItem.polygon?.length){setIdentifyError('Tap the object again to select its outline before replacing it.');return}
     setSelectedPreset(`Replace ${selectedItem.label}`);
     setUseSelectionMask(true);
-    setInstruction(`MANDATORY VISIBLE REPLACEMENT: replace the selected ${selectedItem.category} located around ${selectedItem.x.toFixed(1)}% from the left and ${selectedItem.y.toFixed(1)}% from the top with ${detail}. The replacement must be clearly different in silhouette, material, color or pattern; do not return the original selected object unchanged. Keep it in the same functional area and preserve the exact room, architecture, camera, lighting and every other item unchanged.`);
+    setInstruction(`MANDATORY WHOLE-OBJECT REPLACEMENT: completely remove the entire selected ${selectedItem.category} located around ${selectedItem.x.toFixed(1)}% from the left and ${selectedItem.y.toFixed(1)}% from the top, then replace it edge-to-edge with ${detail}. Replace its complete silhouette, including every visible leaf, branch, cushion, leg or other connected part. Do not leave fragments of the old object, duplicate it, paste a rectangular patch, or create a hard seam. Reconstruct any newly exposed background naturally. The replacement must be clearly different while remaining correctly scaled in the same functional area. Preserve the exact room, architecture, camera, lighting and every other item unchanged.`);
   }
 
   function chooseProductImage(file?:File){
@@ -169,8 +199,7 @@ export default function LocalResultPage(){
     }catch(reason){setProductError(reason instanceof Error?reason.message:'Could not place this product in the room.');setPlacingProduct(false)}
   }
 
-  async function submitEdit(event:FormEvent){
-    event.preventDefault();
+  async function runEdit(){
     if(!design||!instruction.trim()||editing)return;
     setEditing(true);setEditError('');
     try{
@@ -178,7 +207,7 @@ export default function LocalResultPage(){
       form.append('image',design.image,'current-design.png');
       form.append('instruction',instruction.trim());
       if(useSelectionMask&&selectedItem){
-        const mask=await createSelectionMask(design.image,selectedItem.x,selectedItem.y,selectedItem.category);
+        const mask=await createSelectionMask(design.image,selectedItem.polygon||[],moveDestination);
         form.append('mask',mask,'selection-mask.png');
       }
       const response=await fetch('/api/designs/refine',{method:'POST',body:form});
@@ -196,27 +225,37 @@ export default function LocalResultPage(){
     }
   }
 
+  function submitEdit(event:FormEvent){event.preventDefault();void runEdit()}
+
   if(error)return <section className="card p-8"><h1 className="text-3xl font-semibold">Saved design</h1><p className="mt-3 text-red-700">{error}</p><Link href="/new-project" className="btn-primary inline-block mt-6">Create another</Link></section>;
   if(!design||!url)return <div className="card p-8">Opening your saved AI design…</div>;
   const project=design.project as {name?:string;color_palette?:string};
+  const moveHelp=moveStage==='choose-item'?'Tap the furniture you want to move':moveStage==='choose-place'?`Now tap where to move ${selectedItem?.label.toLowerCase()||'it'}`:moveStage==='ready'?`${selectedItem?.label||'Item'} will move to the gold marker`:'';
 
   return <div className="space-y-6">
     <section className="card overflow-hidden">
-      <div className="p-6 md:p-8">
-        <div className="kicker">Saved on this device · AI-generated</div>
-        <h1 className="text-3xl md:text-5xl font-semibold mt-2">{project.name||'My room'}</h1>
-        <p className="text-stone-600 mt-3">{design.style} · {project.color_palette||'Selected palette'}</p>
-        {design.editInstruction&&<p className="mt-3 text-sm text-stone-500">Edited version: {design.editInstruction}</p>}
+      <h1 className="sr-only">{project.name||'My room'} · {design.style}</h1>
+      <div className="relative">
+        <button type="button" onClick={selectImageItem} className="relative block w-full cursor-crosshair text-left" aria-label={moveStage==='off'?'Tap an interior item to change it':moveHelp}>
+          <img src={url} alt={`AI-generated ${design.style} design of the uploaded room`} className="w-full object-cover"/>
+          {selectedItem?.polygon?.length&&<svg className="absolute inset-0 h-full w-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon points={selectedItem.polygon.map(point=>point.join(',')).join(' ')} fill="rgba(36,91,75,.25)" stroke="white" strokeWidth=".3"/></svg>}
+          {selectedItem&&<span className="absolute h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-white bg-black/80 shadow-lg" style={{left:`${selectedItem.x}%`,top:`${selectedItem.y}%`}}/>}
+          {moveDestination&&<span className="absolute grid h-11 w-11 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-4 border-white bg-amber-500 text-xl font-black text-black shadow-xl" style={{left:`${moveDestination.x}%`,top:`${moveDestination.y}%`}}>↓</span>}
+          {identifying&&<span className="absolute inset-0 grid place-items-center bg-black/35 text-lg font-semibold text-white">Identifying furniture…</span>}
+          {moveStage==='off'&&!selectedItem&&!identifying&&<span className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/80 px-4 py-2 text-sm font-semibold text-white shadow-lg">Tap an item to change it</span>}
+        </button>
+        <div className="absolute left-3 right-3 top-3 z-10 flex items-center justify-between gap-2">
+          <button type="button" onClick={toggleMoveMode} className={`rounded-full px-4 py-3 text-sm font-bold shadow-lg backdrop-blur ${moveStage==='off'?'bg-white/95 text-black':'bg-black/90 text-white'}`}>{moveStage==='off'?'↔ Move furniture':'× Cancel moving'}</button>
+          {moveStage!=='off'&&<span className="max-w-[58%] rounded-2xl bg-white/95 px-3 py-2 text-right text-xs font-semibold text-black shadow-lg">{moveHelp}</span>}
+        </div>
+        {moveStage==='ready'&&<div className="absolute bottom-3 left-3 right-3 z-10 flex gap-2">
+          <button type="button" onClick={()=>{setMoveStage('choose-place');setMoveDestination(undefined)}} disabled={editing} className="rounded-2xl bg-white/95 px-4 py-3 text-sm font-semibold text-black shadow-lg">Choose another spot</button>
+          <button type="button" onClick={()=>void runEdit()} disabled={editing} className="min-w-0 flex-1 rounded-2xl bg-black px-4 py-3 text-sm font-bold text-white shadow-lg disabled:opacity-60">{editing?'Moving furniture…':`Move ${selectedItem?.label||'item'} here`}</button>
+        </div>}
       </div>
-      <button type="button" onClick={selectImageItem} className="relative block w-full cursor-crosshair text-left" aria-label="Tap an interior item to select it">
-        <img src={url} alt={`AI-generated ${design.style} design of the uploaded room`} className="w-full object-cover"/>
-        {selectedItem&&<span className="absolute h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-white bg-black/80 shadow-lg" style={{left:`${selectedItem.x}%`,top:`${selectedItem.y}%`}}/>}
-        {identifying&&<span className="absolute inset-0 grid place-items-center bg-black/35 text-lg font-semibold text-white">Identifying item…</span>}
-        {!selectedItem&&!identifying&&<span className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/80 px-4 py-2 text-sm font-semibold text-white shadow-lg">Tap an item to change it</span>}
-      </button>
     </section>
 
-    {selectedItem&&<section className="card p-6 md:p-8">
+    {selectedItem&&moveStage==='off'&&<section className="card p-6 md:p-8">
       <div className="kicker">Selected on the image</div>
       <h2 className="text-2xl font-semibold mt-2">{selectedItem.label}</h2>
       {identifyError&&<p className="mt-2 text-sm text-amber-700">{identifyError}</p>}
@@ -230,7 +269,7 @@ export default function LocalResultPage(){
           {label:'Darker',detail:`a darker statement ${selectedItem.category}`},
         ]).map(option=><button key={option.label} type="button" onClick={()=>chooseSwap(option.detail)} className="rounded-2xl border border-stone-300 bg-white px-3 py-3 text-sm font-medium hover:bg-stone-100">Replace · {option.label}</button>)}
       </div>
-      <p className="mt-3 text-xs text-stone-500">Replacement buttons isolate the tapped object so the new version changes that item instead of redrawing the room.</p>
+      <p className="mt-3 text-xs text-stone-500">Only the highlighted area will change. If it includes another item, tap again before replacing.</p>
 
       <div className="grid grid-cols-2 gap-2 mt-4">
         {selectedItem.storeLinks.map(link=><a key={link.store} href={link.url} target="_blank" rel="noopener noreferrer" className="btn-soft text-center">Shop on {link.store}</a>)}
@@ -260,10 +299,10 @@ export default function LocalResultPage(){
       <div className="kicker">Saved variations</div>
       <h2 className="text-2xl font-semibold mt-2">Compare your versions</h2>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-5">
-        {versions.map(version=><Link key={version.id} href={`/local-result?id=${encodeURIComponent(version.id)}`} className={`overflow-hidden rounded-2xl border-2 ${version.current?'border-black':'border-transparent bg-stone-100'}`}>
+        {versions.map(version=><a key={version.id} href={`/local-result?id=${encodeURIComponent(version.id)}`} aria-current={version.current?'page':undefined} className={`overflow-hidden rounded-2xl border-2 ${version.current?'border-black':'border-transparent bg-stone-100'}`}>
           <img src={version.url} alt={version.label} className="aspect-[3/2] w-full object-cover"/>
-          <div className="p-3 text-sm font-medium">{version.current?'Selected · ':''}{version.label}</div>
-        </Link>)}
+          <div className="p-3 text-sm font-medium">{version.current?'Showing now · ':''}{version.label}</div>
+        </a>)}
       </div>
     </section>}
 
@@ -284,7 +323,7 @@ export default function LocalResultPage(){
 
       <form onSubmit={submitEdit} className="mt-6 space-y-3">
         <label htmlFor="edit-instruction" className="block font-medium">Your change</label>
-        <textarea id="edit-instruction" value={instruction} onChange={event=>{setInstruction(event.target.value);setSelectedPreset('');setUseSelectionMask(false)}} maxLength={600} rows={4} className="w-full rounded-2xl border border-stone-300 bg-white p-4" placeholder="Example: Keep the panel only on the left side and make its edge softly curved with warm LED light. Change nothing else."/>
+        <textarea id="edit-instruction" value={instruction} onChange={event=>{setInstruction(event.target.value);setSelectedPreset('')}} maxLength={600} rows={4} className="w-full rounded-2xl border border-stone-300 bg-white p-4" placeholder="Example: Keep the panel only on the left side and make its edge softly curved with warm LED light. Change nothing else."/>
         {editError&&<p className="text-sm text-red-700">{editError}</p>}
         <button type="submit" disabled={editing||!instruction.trim()} className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-50">{editing?'Editing this detail…':'Generate edited version'}</button>
         <p className="text-center text-xs text-stone-500">One option creates one new AI image. Your current image remains saved.</p>
@@ -295,5 +334,6 @@ export default function LocalResultPage(){
       <a href={url} download={`roomai-${design.style.toLowerCase().replaceAll(' ','-')}.png`} className="btn-primary text-center">Save image to iPhone</a>
       <Link href="/new-project" className="btn-soft text-center">Create another design</Link>
     </div>
+    <BetaFeedback context={`Saved ${design.style} design`}/>
   </div>;
 }
