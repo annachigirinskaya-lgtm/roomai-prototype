@@ -84,12 +84,14 @@ export async function generateFromRoom(source:Buffer,mime:string,p:ProjectInput,
   return Buffer.from(b64,'base64');
 }
 
-export function refinementPrompt(instruction:string,hasMask=false){
-  return `Edit the PROVIDED INTERIOR DESIGN IMAGE. This is a precise revision of the same image, not a new room design.
+export function refinementPrompt(instruction:string,hasMask=false,hasObjectReference=false){
+  return `Edit the FIRST PROVIDED IMAGE, which is the existing interior design. This is a precise revision of the same image, not a new room design.
+
+${hasObjectReference?'The SECOND PROVIDED IMAGE is a transparent cutout of the exact selected furniture item from the first image. Use it only as the identity reference for the item being relocated. The final output must remain the first room image and must not become a collage or product cutout.':''}
 
 REQUESTED CHANGE: ${instruction}
 
-${hasMask?'MASKED WHOLE-OBJECT EDIT: the transparent area of the provided mask marks the selected object and, for a move request, its approved destination. Follow the request exactly: either replace the entire object or move that SAME recognizable object to the destination. For relocation, remove the complete object from its old position, reconstruct the exposed wall or floor naturally, and place it only at the requested destination with correct scale, perspective, orientation, contact shadows and lighting. Never leave fragments, duplicate the object, alter only a rectangular crop, or create a hard border. Keep opaque areas visually unchanged.':''}
+${hasMask?'MASKED WHOLE-OBJECT EDIT: the transparent areas of the mask on the FIRST image mark both the old object position and its approved destination. For relocation, the result is invalid unless the selected item is visibly absent from the old position and visibly present at the destination. Reconstruct the old wall or floor, then render the same recognizable item at the destination with correct scale, perspective, orientation, contact shadows and lighting. Never leave fragments, duplicate the object, alter only a rectangular crop, or create a hard border. Keep opaque areas visually unchanged.':''}
 
 NON-NEGOTIABLE: make only the requested change. Preserve the exact camera position, crop, perspective, room dimensions, ceiling, floor, lighting direction and the position and size of every door, doorway, passage, window, balcony opening, column, vent, switch, outlet, kitchen cabinet, countertop and fixed fixture. Keep all furniture, decor, materials and colors unchanged unless the request explicitly names them. Never close, cover, move, narrow, resize or invent an architectural opening. Never move a wall or redesign the room layout.
 
@@ -98,16 +100,17 @@ If the request concerns a wall panel, feature wall, marble, slats, millwork or f
 Return one seamless photorealistic interior photograph at the same aspect ratio, with no text, labels, arrows, dimensions, before/after split, collage or watermark.`;
 }
 
-export async function refineRoomDesign(source:Buffer,mime:string,instruction:string,mask?:Buffer){
+export async function refineRoomDesign(source:Buffer,mime:string,instruction:string,mask?:Buffer,objectReference?:Buffer){
   if(!process.env.OPENAI_API_KEY)throw new Error('OPENAI_API_KEY missing');
   const client=new OpenAI({apiKey:process.env.OPENAI_API_KEY});
   const file=await toFile(source,'design',{type:mime});
   const maskFile=mask?await toFile(mask,'selection-mask.png',{type:'image/png'}):undefined;
+  const referenceFile=objectReference?await toFile(objectReference,'selected-furniture.png',{type:'image/png'}):undefined;
   const res=await client.images.edit({
     model:IMAGE_MODEL,
-    image:file,
+    image:referenceFile?[file,referenceFile]:file,
     ...(maskFile?{mask:maskFile}:{}),
-    prompt:refinementPrompt(instruction,Boolean(maskFile)),
+    prompt:refinementPrompt(instruction,Boolean(maskFile),Boolean(referenceFile)),
     size:outputSize(source,mime,IMAGE_MODEL),
     quality:IMAGE_QUALITY,
     ...(IMAGE_MODEL.startsWith('gpt-image-2')?{}:{input_fidelity:'high' as const}),

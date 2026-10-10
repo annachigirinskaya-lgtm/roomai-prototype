@@ -61,6 +61,28 @@ async function createSelectionMask(image:Blob,polygon:number[][],destination?:Po
   return await new Promise<Blob>((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Could not prepare the selected area.')),'image/png'));
 }
 
+async function createObjectReference(image:Blob,polygon:number[][]){
+  if(polygon.length<3)throw new Error('Tap the furniture again so RoomAI can capture its full outline.');
+  const bitmap=await createImageBitmap(image);
+  const xs=polygon.map(([x])=>x),ys=polygon.map(([,y])=>y);
+  const padding=4;
+  const left=Math.max(0,Math.min(...xs)-padding),top=Math.max(0,Math.min(...ys)-padding);
+  const right=Math.min(100,Math.max(...xs)+padding),bottom=Math.min(100,Math.max(...ys)+padding);
+  const sourceX=Math.floor(left/100*bitmap.width),sourceY=Math.floor(top/100*bitmap.height);
+  const sourceWidth=Math.max(1,Math.ceil((right-left)/100*bitmap.width));
+  const sourceHeight=Math.max(1,Math.ceil((bottom-top)/100*bitmap.height));
+  const canvas=document.createElement('canvas');canvas.width=sourceWidth;canvas.height=sourceHeight;
+  const context=canvas.getContext('2d');
+  if(!context){bitmap.close();throw new Error('Could not capture the selected furniture.');}
+  context.beginPath();
+  polygon.forEach(([x,y],index)=>{
+    const px=x/100*bitmap.width-sourceX,py=y/100*bitmap.height-sourceY;
+    if(index===0)context.moveTo(px,py);else context.lineTo(px,py);
+  });
+  context.closePath();context.clip();context.drawImage(bitmap,-sourceX,-sourceY);bitmap.close();
+  return await new Promise<Blob>((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Could not capture the selected furniture.')),'image/png'));
+}
+
 const SWAP_OPTIONS:Record<string,{label:string;detail:string}[]>={
   rug:[{label:'More luxurious',detail:'a more luxurious designer rug with richer texture'},{label:'Larger',detail:'a larger properly scaled area rug'},{label:'Organic shape',detail:'a fashionable organic-shaped rug'},{label:'Subtle pattern',detail:'an elegant rug with a subtle pattern'}],
   sofa:[{label:'Curved sofa',detail:'an elegant curved designer sofa'},{label:'Sectional',detail:'a comfortable correctly scaled sectional sofa'},{label:'Velvet',detail:'a tailored velvet sofa'},{label:'Bouclé',detail:'a sculptural bouclé sofa'}],
@@ -144,7 +166,7 @@ export default function LocalResultPage(){
     if((moveStage==='choose-place'||moveStage==='ready')&&selectedItem){
       const destination={x,y};
       setMoveDestination(destination);setMoveStage('ready');setSelectedPreset(`Move ${selectedItem.label}`);setUseSelectionMask(true);setEditError('');
-      setInstruction(`MOVE THE EXISTING ${selectedItem.category.toUpperCase()}: remove the complete selected ${selectedItem.category} from its current position around ${selectedItem.x.toFixed(1)}% from the left and ${selectedItem.y.toFixed(1)}% from the top, and place that SAME item around ${x.toFixed(1)}% from the left and ${y.toFixed(1)}% from the top. Preserve its recognizable design, color, material and approximate scale; change only its position and rotate it only as needed to sit naturally against the target wall or floor. Reconstruct the old location as the correct unobstructed wall or floor. Keep every other object unchanged. Never move, remove, cover or resize doors, windows, passages, vents, outlets or fixed architecture, and keep all walkways usable.`);
+      setInstruction(`MOVE THE SELECTED ${selectedItem.category.toUpperCase()} from ${selectedItem.x.toFixed(1)}% left, ${selectedItem.y.toFixed(1)}% top to ${x.toFixed(1)}% left, ${y.toFixed(1)}% top. The second reference image is this exact item: preserve its design, color, material and scale. Remove it completely from the old spot and restore the exposed wall or floor. Place it clearly at the destination, rotating only if needed. Do not duplicate it or move any other object. Preserve all architecture and keep doors, windows and walkways clear.`);
       return;
     }
     setIdentifying(true);setIdentifyError('');setSelectedItem(undefined);
@@ -209,6 +231,10 @@ export default function LocalResultPage(){
       if(useSelectionMask&&selectedItem){
         const mask=await createSelectionMask(design.image,selectedItem.polygon||[],moveDestination);
         form.append('mask',mask,'selection-mask.png');
+        if(moveDestination){
+          const objectReference=await createObjectReference(design.image,selectedItem.polygon||[]);
+          form.append('object_reference',objectReference,'selected-furniture.png');
+        }
       }
       const response=await fetch('/api/designs/refine',{method:'POST',body:form});
       if(!response.ok){
@@ -253,6 +279,7 @@ export default function LocalResultPage(){
           <button type="button" onClick={()=>void runEdit()} disabled={editing} className="min-w-0 flex-1 rounded-2xl bg-black px-4 py-3 text-sm font-bold text-white shadow-lg disabled:opacity-60">{editing?'Moving furniture…':`Move ${selectedItem?.label||'item'} here`}</button>
         </div>}
       </div>
+      {moveStage!=='off'&&editError&&<p className="border-t border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800" role="alert">{editError}</p>}
     </section>
 
     {selectedItem&&moveStage==='off'&&<section className="card p-6 md:p-8">

@@ -6,7 +6,7 @@ export const runtime='nodejs';
 export const maxDuration=300;
 
 const MAX_IMAGE_BYTES=20*1024*1024;
-const MAX_INSTRUCTION_LENGTH=600;
+const MAX_INSTRUCTION_LENGTH=1200;
 const WINDOW_MS=60*60*1000;
 const MAX_PER_WINDOW=12;
 const globalRate=globalThis as unknown as {roomAiRefineRate?:Map<string,number[]>};
@@ -30,16 +30,25 @@ export async function POST(req:NextRequest){
     const data=await req.formData();
     const image=data.get('image');
     const mask=data.get('mask');
+    const objectReference=data.get('object_reference');
     const rawInstruction=data.get('instruction');
     const instruction=typeof rawInstruction==='string'?rawInstruction.trim():'';
     if(!(image instanceof File))return NextResponse.json({error:'The current design image is required.'},{status:400});
     if(!instruction)return NextResponse.json({error:'Describe the detail you want to change.'},{status:400});
-    if(instruction.length>MAX_INSTRUCTION_LENGTH)return NextResponse.json({error:'Keep the change request under 600 characters.'},{status:400});
+    if(instruction.length>MAX_INSTRUCTION_LENGTH)return NextResponse.json({error:'Keep the change request under 1,200 characters.'},{status:400});
     if(image.size>MAX_IMAGE_BYTES)return NextResponse.json({error:'The design image must be smaller than 20 MB.'},{status:413});
     if(!['image/jpeg','image/png','image/webp'].includes(image.type))return NextResponse.json({error:'Use a JPG, PNG or WebP design image.'},{status:415});
     if(mask!==null&&!(mask instanceof File))return NextResponse.json({error:'The selected-area mask is invalid.'},{status:400});
     if(mask instanceof File&&(mask.type!=='image/png'||mask.size>MAX_IMAGE_BYTES))return NextResponse.json({error:'The selected-area mask must be a PNG smaller than 20 MB.'},{status:415});
-    const output=await refineRoomDesign(Buffer.from(await image.arrayBuffer()),image.type,instruction,mask instanceof File?Buffer.from(await mask.arrayBuffer()):undefined);
+    if(objectReference!==null&&!(objectReference instanceof File))return NextResponse.json({error:'The selected furniture reference is invalid.'},{status:400});
+    if(objectReference instanceof File&&(objectReference.type!=='image/png'||objectReference.size>MAX_IMAGE_BYTES))return NextResponse.json({error:'The selected furniture reference must be a PNG smaller than 20 MB.'},{status:415});
+    const output=await refineRoomDesign(
+      Buffer.from(await image.arrayBuffer()),
+      image.type,
+      instruction,
+      mask instanceof File?Buffer.from(await mask.arrayBuffer()):undefined,
+      objectReference instanceof File?Buffer.from(await objectReference.arrayBuffer()):undefined,
+    );
     return new Response(new Uint8Array(output),{status:200,headers:{'content-type':'image/png','cache-control':'private, no-store'}});
   }catch(error:any){
     console.error('Design refinement failed',error);
