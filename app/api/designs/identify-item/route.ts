@@ -6,7 +6,7 @@ export const runtime='nodejs';
 export const maxDuration=60;
 
 const MAX_IMAGE_BYTES=20*1024*1024;
-const CATEGORIES=['vase','flower arrangement','decorative bowl','tray','candle','books','sculpture','throw pillow','blanket','rug','sofa','sectional sofa','armchair','ottoman','pouf','bench','coffee table','side table','dining table','dining chair','bar stool','tv','tv console','soundbar','floor lamp','table lamp','ceiling light','chandelier','curtains','wall art','mirror','indoor plant','plant pot','wall panel','fireplace','shelving','cabinet','decor accessory'] as const;
+const CATEGORIES=['vase','flower arrangement','decorative bowl','tray','candle','books','sculpture','throw pillow','blanket','rug','sofa','sectional sofa','armchair','ottoman','pouf','bench','bed','mattress','headboard','nightstand','dresser','desk','desk chair','bookcase','coffee table','side table','dining table','dining chair','bar stool','tv','tv console','soundbar','floor lamp','table lamp','ceiling light','chandelier','curtains','wall art','mirror','indoor plant','plant pot','wall panel','fireplace','shelving','cabinet','decor accessory'] as const;
 function itemLabel(category:string){return category.replace(/\b\w/g,letter=>letter.toUpperCase())}
 
 function storeLinks(query:string){

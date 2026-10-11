@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, MouseEvent, useEffect, useState } from 'react';
+import { FormEvent, MouseEvent, useCallback, useEffect, useState } from 'react';
 import { getLocalDesign, getLocalDesigns, saveLocalDesign, type LocalDesign } from '@/lib/local-designs';
 import BetaFeedback from '@/components/BetaFeedback';
+import RoomShopping from '@/components/RoomShopping';
 
 type DesignVersion={id:string;label:string;url:string;current:boolean};
 type SelectedItem={category:string;label:string;x:number;y:number;query:string;polygon?:number[][];storeLinks:{store:string;url:string}[]};
@@ -11,7 +12,7 @@ type Point={x:number;y:number};
 type MoveStage='off'|'choose-item'|'choose-place'|'ready';
 
 const ITEM_CATEGORIES=[
-  ['vase','Vase'],['flower arrangement','Flowers'],['decorative bowl','Decorative bowl'],['tray','Tray'],['candle','Candle'],['books','Books'],['sculpture','Sculpture'],['throw pillow','Pillow'],['blanket','Blanket'],['rug','Rug'],['sofa','Sofa'],['armchair','Armchair'],['ottoman','Ottoman'],['coffee table','Coffee table'],['side table','Side table'],['dining table','Dining table'],['dining chair','Dining chair'],['bar stool','Bar stool'],['tv','TV'],['tv console','TV console'],['floor lamp','Floor lamp'],['table lamp','Table lamp'],['ceiling light','Ceiling light'],['chandelier','Chandelier'],['curtains','Curtains'],['wall art','Wall art'],['mirror','Mirror'],['indoor plant','Plant'],['plant pot','Plant pot'],['wall panel','Wall panel'],['fireplace','Fireplace'],['shelving','Shelving'],['cabinet','Cabinet'],['decor accessory','Other decor'],
+  ['vase','Vase'],['flower arrangement','Flowers'],['decorative bowl','Decorative bowl'],['tray','Tray'],['candle','Candle'],['books','Books'],['sculpture','Sculpture'],['throw pillow','Pillow'],['blanket','Blanket'],['rug','Rug'],['sofa','Sofa'],['armchair','Armchair'],['ottoman','Ottoman'],['bed','Bed'],['mattress','Mattress'],['headboard','Headboard'],['nightstand','Nightstand'],['dresser','Dresser'],['desk','Desk'],['desk chair','Desk chair'],['bookcase','Bookcase'],['coffee table','Coffee table'],['side table','Side table'],['dining table','Dining table'],['dining chair','Dining chair'],['bar stool','Bar stool'],['tv','TV'],['tv console','TV console'],['floor lamp','Floor lamp'],['table lamp','Table lamp'],['ceiling light','Ceiling light'],['chandelier','Chandelier'],['curtains','Curtains'],['wall art','Wall art'],['mirror','Mirror'],['indoor plant','Plant'],['plant pot','Plant pot'],['wall panel','Wall panel'],['fireplace','Fireplace'],['shelving','Shelving'],['cabinet','Cabinet'],['decor accessory','Other decor'],
 ] as const;
 
 async function cropAroundPoint(image:Blob,x:number,y:number){
@@ -124,6 +125,9 @@ export default function LocalResultPage(){
   const [productError,setProductError]=useState('');
   const [moveStage,setMoveStage]=useState<MoveStage>('off');
   const [moveDestination,setMoveDestination]=useState<Point>();
+  const [shoppingOpen,setShoppingOpen]=useState(false);
+  const [wholeRoomShopping,setWholeRoomShopping]=useState(false);
+  const closeShopping=useCallback(()=>setShoppingOpen(false),[]);
 
   useEffect(()=>{
     const objectUrls:string[]=[];
@@ -178,6 +182,7 @@ export default function LocalResultPage(){
       if(!response.ok)throw new Error(result.error||'Could not identify this item.');
       setSelectedItem(result);
       if(moveStage==='choose-item')setMoveStage('choose-place');
+      else{setWholeRoomShopping(false);setShoppingOpen(true)}
     }catch(reason){
       setSelectedItem({category:'decor',label:'Choose item below',x,y,query:'',storeLinks:[]});
       setIdentifyError(reason instanceof Error?reason.message:'Choose the item manually below.');
@@ -216,7 +221,7 @@ export default function LocalResultPage(){
       const response=await fetch('/api/designs/place-product',{method:'POST',body:form});
       if(!response.ok){const message=await response.json().catch(()=>({}));throw new Error(message.error||'Could not place this product in the room.')}
       const revised=await response.blob();const id=crypto.randomUUID();
-      await saveLocalDesign({...design,id,createdAt:Date.now(),image:revised,parentId:design.id,rootId:design.rootId||design.id,editInstruction:`Exact product · ${selectedItem.label}`});
+      await saveLocalDesign({...design,shopping:undefined,id,createdAt:Date.now(),image:revised,parentId:design.id,rootId:design.rootId||design.id,editInstruction:`Exact product · ${selectedItem.label}`});
       window.location.assign(`/local-result?id=${encodeURIComponent(id)}`);
     }catch(reason){setProductError(reason instanceof Error?reason.message:'Could not place this product in the room.');setPlacingProduct(false)}
   }
@@ -243,7 +248,7 @@ export default function LocalResultPage(){
       }
       const revised=await response.blob();
       const id=crypto.randomUUID();
-      await saveLocalDesign({...design,id,createdAt:Date.now(),image:revised,parentId:design.id,rootId:design.rootId||design.id,editInstruction:selectedPreset||instruction.trim()});
+      await saveLocalDesign({...design,shopping:undefined,id,createdAt:Date.now(),image:revised,parentId:design.id,rootId:design.rootId||design.id,editInstruction:selectedPreset||instruction.trim()});
       window.location.assign(`/local-result?id=${encodeURIComponent(id)}`);
     }catch(reason){
       setEditError(reason instanceof Error?reason.message:'Could not edit this design.');
@@ -259,6 +264,7 @@ export default function LocalResultPage(){
   const moveHelp=moveStage==='choose-item'?'Tap the furniture you want to move':moveStage==='choose-place'?`Now tap where to move ${selectedItem?.label.toLowerCase()||'it'}`:moveStage==='ready'?`${selectedItem?.label||'Item'} will move to the gold marker`:'';
 
   return <div className="space-y-6">
+    <RoomShopping design={design} selected={wholeRoomShopping?undefined:selectedItem} open={shoppingOpen} onClose={closeShopping}/>
     <section className="card overflow-hidden">
       <h1 className="sr-only">{project.name||'My room'} · {design.style}</h1>
       <div className="relative">
@@ -268,10 +274,11 @@ export default function LocalResultPage(){
           {selectedItem&&<span className="absolute h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-white bg-black/80 shadow-lg" style={{left:`${selectedItem.x}%`,top:`${selectedItem.y}%`}}/>}
           {moveDestination&&<span className="absolute grid h-11 w-11 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-4 border-white bg-amber-500 text-xl font-black text-black shadow-xl" style={{left:`${moveDestination.x}%`,top:`${moveDestination.y}%`}}>↓</span>}
           {identifying&&<span className="absolute inset-0 grid place-items-center bg-black/35 text-lg font-semibold text-white">Identifying furniture…</span>}
-          {moveStage==='off'&&!selectedItem&&!identifying&&<span className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/80 px-4 py-2 text-sm font-semibold text-white shadow-lg">Tap an item to change it</span>}
+          {moveStage==='off'&&!selectedItem&&!identifying&&<span className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/80 px-4 py-2 text-sm font-semibold text-white shadow-lg">Tap an item for price & edits</span>}
         </button>
         <div className="absolute left-3 right-3 top-3 z-10 flex items-center justify-between gap-2">
           <button type="button" onClick={toggleMoveMode} className={`rounded-full px-4 py-3 text-sm font-bold shadow-lg backdrop-blur ${moveStage==='off'?'bg-white/95 text-black':'bg-black/90 text-white'}`}>{moveStage==='off'?'↔ Move furniture':'× Cancel moving'}</button>
+          {moveStage==='off'&&<button type="button" onClick={()=>{setWholeRoomShopping(true);setShoppingOpen(true)}} className="rounded-full bg-white/95 px-4 py-3 text-sm font-bold text-black shadow-lg">$ Shop room</button>}
           {moveStage!=='off'&&<span className="max-w-[58%] rounded-2xl bg-white/95 px-3 py-2 text-right text-xs font-semibold text-black shadow-lg">{moveHelp}</span>}
         </div>
         {moveStage==='ready'&&<div className="absolute bottom-3 left-3 right-3 z-10 flex gap-2">
@@ -285,6 +292,7 @@ export default function LocalResultPage(){
     {selectedItem&&moveStage==='off'&&<section className="card p-6 md:p-8">
       <div className="kicker">Selected on the image</div>
       <h2 className="text-2xl font-semibold mt-2">{selectedItem.label}</h2>
+      <button type="button" onClick={()=>{setWholeRoomShopping(false);setShoppingOpen(true)}} className="btn-primary mt-3">View price & product</button>
       {identifyError&&<p className="mt-2 text-sm text-amber-700">{identifyError}</p>}
       <p className="mt-2 text-stone-600">Choose a replacement direction, shop current retailer results, or correct the detected item.</p>
 
