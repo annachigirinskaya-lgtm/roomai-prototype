@@ -8,7 +8,9 @@ export const maxDuration=300;
 
 const MAX_IMAGE_BYTES=20*1024*1024;
 const WINDOW_MS=60*60*1000;
-const MAX_PER_WINDOW=12;
+// One full six-style comparison plus two retries per IP each hour.
+// The prepaid API balance remains the hard spending ceiling for the private beta.
+const MAX_PER_WINDOW=8;
 const globalRate=globalThis as unknown as {roomAiRate?:Map<string,number[]>};
 const rate=globalRate.roomAiRate??new Map<string,number[]>();
 globalRate.roomAiRate=rate;
@@ -22,20 +24,35 @@ function rateLimited(req:NextRequest){
 }
 
 export async function POST(req:NextRequest){
-  if(process.env.NEXT_PUBLIC_SUPABASE_URL&&process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)return NextResponse.json({error:'Please sign in and use your account credits to generate designs.'},{status:403});
+  const protectedBeta=process.env.NEXT_PUBLIC_ROOMAI_BETA_MODE==='true';
+  const previewBeta=process.env.VERCEL_ENV==='preview';
+  if(protectedBeta){
+    const expectedToken=process.env.ROOMAI_BETA_ACCESS_TOKEN;
+    if(!expectedToken)return NextResponse.json({error:'Private beta access is not configured yet.'},{status:503});
+    if(req.headers.get('x-roomai-beta-token')!==expectedToken)return NextResponse.json({error:'This private beta link is not valid. Ask for a new invitation link.'},{status:401});
+  }else if(!previewBeta&&process.env.NEXT_PUBLIC_SUPABASE_URL&&process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY){
+    return NextResponse.json({error:'Please sign in and use your account credits to generate designs.'},{status:403});
+  }
   if(!process.env.OPENAI_API_KEY)return NextResponse.json({error:'OpenAI is not connected in Vercel yet. Add OPENAI_API_KEY in Environment Variables and redeploy.'},{status:503});
   if(rateLimited(req))return NextResponse.json({error:'Hourly prototype generation limit reached. Please try again later.'},{status:429});
   try{
     const data=await req.formData();
     const image=data.get('image');
     const raw=data.get('project');
+    const referenceFiles=data.getAll('references');
+    if(referenceFiles.length>2)return NextResponse.json({error:'Add up to two additional room photos.'},{status:400});
+    if(referenceFiles.some(file=>!(file instanceof File)||file.size>MAX_IMAGE_BYTES||!['image/jpeg','image/png','image/webp'].includes(file.type)))return NextResponse.json({error:'Each additional photo must be a JPG, PNG or WebP smaller than 20 MB.'},{status:400});
     if(!(image instanceof File)||typeof raw!=='string')return NextResponse.json({error:'Room photo and project settings are required.'},{status:400});
     if(image.size>MAX_IMAGE_BYTES)return NextResponse.json({error:'The photo must be smaller than 20 MB.'},{status:413});
     if(!['image/jpeg','image/png','image/webp'].includes(image.type))return NextResponse.json({error:'Use a JPG, PNG or WebP room photo.'},{status:415});
     const parsed=JSON.parse(raw) as ProjectInput;
+    if(parsed.layout_mode!==undefined&&!['preserve','rearrange'].includes(parsed.layout_mode))return NextResponse.json({error:'Choose a valid furniture layout option.'},{status:400});
     if(!STYLES.includes(parsed.style as never))return NextResponse.json({error:'Choose a valid interior style.'},{status:400});
-    const project:ProjectInput={...parsed,budget:Number(parsed.budget)||1500,source_image_url:''};
-    const output=await generateFromRoom(Buffer.from(await image.arrayBuffer()),image.type,project,[]);
+    const budget=Number(parsed.budget);
+    if(!Number.isFinite(budget)||budget<50)return NextResponse.json({error:'Enter a furniture and decor budget of at least $50.'},{status:400});
+    const project:ProjectInput={...parsed,budget,source_image_url:''};
+    const references=await Promise.all((referenceFiles as File[]).map(async file=>({source:Buffer.from(await file.arrayBuffer()),mime:file.type})));
+    const output=await generateFromRoom(Buffer.from(await image.arrayBuffer()),image.type,project,[],references);
     return new Response(new Uint8Array(output),{status:200,headers:{'content-type':'image/png','cache-control':'private, no-store','x-roomai-style':encodeURIComponent(project.style)}});
   }catch(error:any){
     console.error('Quick generation failed',error);
