@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { saveLocalDesign, type LocalDesign } from '@/lib/local-designs';
 import { shoppingTotal, type ShoppingItem, type ShoppingList } from '@/lib/shopping';
+import { prepareVisionUpload } from '@/lib/vision-upload';
+import { readShoppingResponse } from '@/lib/shopping-response';
 
 type Selection={category:string;label:string;x:number;y:number};
 const money=(value:number)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(value);
@@ -30,15 +32,19 @@ export default function RoomShopping({design,selected,open,onClose}:{design:Loca
     const controller=new AbortController();abort.current=controller;
     setBusy(true);setError('');setMatches([]);
     try{
-      const form=new FormData();form.append('image',design.image,'room.png');form.append('budget',String(budget));form.append('style',design.style);form.append('keep',String(design.project.keep_items||''));
+      const image=await prepareVisionUpload(design.image);
+      if(controller.signal.aborted)return;
+      const form=new FormData();form.append('image',image,'room-search.jpg');form.append('budget',String(budget));form.append('style',design.style);form.append('keep',String(design.project.keep_items||''));
       if(selection){form.append('category',selection.category);form.append('x',String(selection.x));form.append('y',String(selection.y))}
       const response=await fetch('/api/products/match',{method:'POST',body:form,signal:controller.signal});
-      const data=await response.json();if(!response.ok)throw new Error(data.error||'Could not find prices.');
+      const data=await readShoppingResponse(response);
       if(controller.signal.aborted)return;
       setCheckedAt(data.checkedAt);
       if(selection){cache.current.set(`${selection.category}:${selection.x}:${selection.y}`,data);setMatches(data.items)}
       else{await persist(data)}
-    }catch(reason){if(!controller.signal.aborted)setError(reason instanceof Error?reason.message:'Could not find prices.')}
+    }catch(reason){
+      if(!controller.signal.aborted)setError(reason instanceof Error&&reason.name!=='SyntaxError'&&reason.name!=='TypeError'?reason.message:'Product search could not connect. Keep this page open and try again.');
+    }
     finally{if(!controller.signal.aborted)setBusy(false)}
   }
 

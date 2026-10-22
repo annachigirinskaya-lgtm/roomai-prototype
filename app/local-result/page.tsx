@@ -5,6 +5,7 @@ import { FormEvent, MouseEvent, useCallback, useEffect, useState } from 'react';
 import { getLocalDesign, getLocalDesigns, saveLocalDesign, type LocalDesign } from '@/lib/local-designs';
 import BetaFeedback from '@/components/BetaFeedback';
 import RoomShopping from '@/components/RoomShopping';
+import { prepareVisionUpload } from '@/lib/vision-upload';
 
 type DesignVersion={id:string;label:string;url:string;current:boolean};
 type SelectedItem={category:string;label:string;x:number;y:number;query:string;polygon?:number[][];storeLinks:{store:string;url:string}[]};
@@ -175,8 +176,8 @@ export default function LocalResultPage(){
     }
     setIdentifying(true);setIdentifyError('');setSelectedItem(undefined);
     try{
-      const crop=await cropAroundPoint(design.image,x,y);
-      const form=new FormData();form.append('image',design.image,'current-design.png');form.append('crop',crop,'selected-area.png');form.append('x',String(x));form.append('y',String(y));form.append('style',design.style);form.append('palette',project.color_palette||'neutral');
+      const [image,crop]=await Promise.all([prepareVisionUpload(design.image),cropAroundPoint(design.image,x,y)]);
+      const form=new FormData();form.append('image',image,'current-design.jpg');form.append('crop',crop,'selected-area.png');form.append('x',String(x));form.append('y',String(y));form.append('style',design.style);form.append('palette',project.color_palette||'neutral');
       const response=await fetch('/api/designs/identify-item',{method:'POST',body:form});
       const result=await response.json();
       if(!response.ok)throw new Error(result.error||'Could not identify this item.');
