@@ -1,5 +1,6 @@
 import type OpenAI from 'openai';
 import { normalizeShoppingItems, type ShoppingItem, type ShoppingList } from '@/lib/shopping';
+import { confirmRetailerPrice } from '@/services/retailer-price';
 
 export function modelJson(text:string):{items:Record<string,unknown>[]} {
   // Search responses may add citations outside their requested JSON object.
@@ -42,8 +43,7 @@ export async function findRoomProducts(client:OpenAI,input:{imageUrl:string;styl
   const items=normalizeShoppingItems(modelJson(inventory.output_text).items,[]);
   if(!items.length)throw new Error('No visible furniture was identified. Try tapping the center of one item.');
   const issues:string[]=[];
-  const diagnostics:string[]=[];
-  const priceEvidence:unknown[]=[];
+  const pageChecks=new Map<string,Promise<number|null>>();
   // Batches keep retailer queries small and isolate one failed lookup from the rest.
   const batches:ShoppingItem[][]=[];for(let index=0;index<items.length;index+=4)batches.push(items.slice(index,index+4));
   for(let index=0;index<batches.length;index+=2){
@@ -83,19 +83,24 @@ export async function findRoomProducts(client:OpenAI,input:{imageUrl:string;styl
           });
           matches=modelJson(formatted.output_text).items;
         }
-        if(process.env.VERCEL_ENV==='preview')priceEvidence.push({candidates:matches.map(item=>({id:item.id,title:item.title,price:item.price,priceQuote:item.priceQuote,productUrl:item.productUrl})),sources});
-        for(const item of batch){
-          const match=matches.find(match=>match?.id===item.id);if(!match)continue;
+        await Promise.all(batch.map(async item=>{
+          const match=matches.find(match=>match?.id===item.id);if(!match)return;
           const normalized=normalizeShoppingItems([{...item,...match,quantity:item.quantity,x:item.x,y:item.y,included:item.included}],sources)[0];
-          if(normalized)Object.assign(item,normalized,{id:item.id});
-        }
+          if(normalized){
+            if(normalized.productUrl){
+              if(!pageChecks.has(normalized.productUrl))pageChecks.set(normalized.productUrl,confirmRetailerPrice(normalized.productUrl));
+              normalized.price=await pageChecks.get(normalized.productUrl)!;
+              normalized.priceQuote=normalized.price!==null?`USD ${normalized.price.toFixed(2)}`:'';
+            }else{normalized.price=null;normalized.priceQuote=''}
+            Object.assign(item,normalized,{id:item.id});
+          }
+        }));
       }catch(error){
         const failure=shoppingFailure(error);issues.push(failure.code);
-        if(process.env.VERCEL_ENV==='preview')diagnostics.push(String((error as {message?:string})?.message||'Bad search request').replace(/sk-[A-Za-z0-9_-]+/g,'[redacted]').replace(/data:[^\s]+/g,'[image]').slice(0,350));
         console.error('Retailer lookup failed',{code:failure.code,status:(error as {status?:number})?.status});
       }
     }));
   }
   const missing=items.filter(item=>item.price===null).length;
-  return {items,checkedAt:new Date().toISOString(),...(process.env.VERCEL_ENV==='preview'&&items.some(item=>item.price===null)?{priceEvidence}:{}),...(process.env.VERCEL_ENV==='preview'&&diagnostics.length?{diagnostics}:{}),...(missing?{warning:issues.length?`Some retailer searches failed (${[...new Set(issues)].join(', ')}). Confirmed prices are shown; ${missing} item group(s) remain unpriced.`:`No reliable retailer price was found for ${missing} item group(s). These are excluded from the known-price subtotal.`}:{})};
+  return {items,checkedAt:new Date().toISOString(),...(missing?{warning:issues.length?`Some retailer searches failed (${[...new Set(issues)].join(', ')}). Confirmed prices are shown; ${missing} item group(s) remain unpriced.`:`No reliable retailer price was found for ${missing} item group(s). These are excluded from the known-price subtotal.`}:{})};
 }
