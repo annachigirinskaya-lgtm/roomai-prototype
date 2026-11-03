@@ -9,6 +9,8 @@ const {furnitureInstruction}=load('lib/furniture-operation.ts');
  const result=await findRoomProducts(mock,input);
  assert.equal(result.items.length,2);assert.equal(result.items[0].price,129.99);assert.equal(result.items[0].quantity,2);assert.equal(result.items[1].price,null);assert.equal(shopping.shoppingTotal(result.items).total,259.98);assert.ok(result.warning);
  assert.equal(calls[0].text.format.type,'json_object');assert.equal(calls[1].text,undefined);assert.equal(calls[1].tools[0].type,'web_search');assert.equal(calls[1].input.includes('800'),true);
+ const compatibilityCalls=[];const compatibility={responses:{create:async body=>{compatibilityCalls.push(body);if(body.tools?.[0].type==='web_search')throw {status:400,param:'tools'};return mock.responses.create(body)}}};
+ const compatible=await findRoomProducts(compatibility,input);assert.equal(compatible.items[0].price,129.99);assert.equal(compatibilityCalls.filter(body=>body.tools?.[0].type==='web_search_preview').length,1);
  const failing={responses:{create:async body=>{if(!body.tools)return mock.responses.create(body);throw {status:400,param:'text.format'}}}};
  const partial=await findRoomProducts(failing,input);assert.equal(partial.items.length,2);assert.equal(partial.items[0].price,null);assert.match(partial.warning,/SEARCH_CONFIGURATION/);
  assert.equal(modelJson('prefix {"items":[{"description":"{a} \\\" quoted"}]} citation').items.length,1);
