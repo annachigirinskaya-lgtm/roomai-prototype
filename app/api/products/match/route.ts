@@ -4,7 +4,7 @@ import { editorAccess } from '@/lib/design-access';
 import { findRoomProducts, shoppingFailure } from '@/services/room-products';
 
 export const runtime='nodejs';
-export const maxDuration=180;
+export const maxDuration=300;
 const state=globalThis as typeof globalThis&{roomAiShoppingRate?:Map<string,number[]>};
 const rate:Map<string,number[]>=state.roomAiShoppingRate??=new Map<string,number[]>();
 
