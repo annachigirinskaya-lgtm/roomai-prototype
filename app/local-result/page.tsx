@@ -5,12 +5,14 @@ import { FormEvent, MouseEvent, useCallback, useEffect, useState } from 'react';
 import { getLocalDesign, getLocalDesigns, saveLocalDesign, type LocalDesign } from '@/lib/local-designs';
 import BetaFeedback from '@/components/BetaFeedback';
 import RoomShopping from '@/components/RoomShopping';
+import RoomLayouts from '@/components/RoomLayouts';
+import { MOVE_ITEMS } from '@/lib/furniture-operation';
 import { prepareVisionUpload } from '@/lib/vision-upload';
 
 type DesignVersion={id:string;label:string;url:string;current:boolean};
 type SelectedItem={category:string;label:string;x:number;y:number;query:string;polygon?:number[][];storeLinks:{store:string;url:string}[]};
 type Point={x:number;y:number};
-type MoveStage='off'|'choose-item'|'choose-place'|'ready';
+type MoveStage='off'|'choose-item'|'confirm-item'|'choose-place'|'ready'|'choose-second'|'ready-swap';
 
 const ITEM_CATEGORIES=[
   ['vase','Vase'],['flower arrangement','Flowers'],['decorative bowl','Decorative bowl'],['tray','Tray'],['candle','Candle'],['books','Books'],['sculpture','Sculpture'],['throw pillow','Pillow'],['blanket','Blanket'],['rug','Rug'],['sofa','Sofa'],['armchair','Armchair'],['ottoman','Ottoman'],['bed','Bed'],['mattress','Mattress'],['headboard','Headboard'],['nightstand','Nightstand'],['dresser','Dresser'],['desk','Desk'],['desk chair','Desk chair'],['bookcase','Bookcase'],['coffee table','Coffee table'],['side table','Side table'],['dining table','Dining table'],['dining chair','Dining chair'],['bar stool','Bar stool'],['tv','TV'],['tv console','TV console'],['floor lamp','Floor lamp'],['table lamp','Table lamp'],['ceiling light','Ceiling light'],['chandelier','Chandelier'],['curtains','Curtains'],['wall art','Wall art'],['mirror','Mirror'],['indoor plant','Plant'],['plant pot','Plant pot'],['wall panel','Wall panel'],['fireplace','Fireplace'],['shelving','Shelving'],['cabinet','Cabinet'],['decor accessory','Other decor'],
@@ -126,6 +128,11 @@ export default function LocalResultPage(){
   const [productError,setProductError]=useState('');
   const [moveStage,setMoveStage]=useState<MoveStage>('off');
   const [moveDestination,setMoveDestination]=useState<Point>();
+  const [moveKind,setMoveKind]=useState<'move'|'swap'>('move');
+  const [secondItem,setSecondItem]=useState<SelectedItem>();
+  const [categoryHint,setCategoryHint]=useState('');
+  const [layoutsOpen,setLayoutsOpen]=useState(false);
+  useEffect(()=>{if(layoutsOpen)document.getElementById('room-layouts')?.scrollIntoView({behavior:'smooth',block:'start'})},[layoutsOpen]);
   const [shoppingOpen,setShoppingOpen]=useState(false);
   const [wholeRoomShopping,setWholeRoomShopping]=useState(false);
   const closeShopping=useCallback(()=>setShoppingOpen(false),[]);
@@ -164,35 +171,44 @@ export default function LocalResultPage(){
   }
 
   async function selectImageItem(event:MouseEvent<HTMLButtonElement>){
-    if(!design||identifying)return;
+    if(!design||identifying||editing)return;
     const box=event.currentTarget.getBoundingClientRect();
     const x=((event.clientX-box.left)/box.width)*100;
     const y=((event.clientY-box.top)/box.height)*100;
     if((moveStage==='choose-place'||moveStage==='ready')&&selectedItem){
       const destination={x,y};
-      setMoveDestination(destination);setMoveStage('ready');setSelectedPreset(`Move ${selectedItem.label}`);setUseSelectionMask(true);setEditError('');
+      setMoveDestination(destination);setMoveStage('ready');setSelectedPreset(`Move ${selectedItem.label}`);setUseSelectionMask(false);setEditError('');
       setInstruction(`MOVE THE SELECTED ${selectedItem.category.toUpperCase()} from ${selectedItem.x.toFixed(1)}% left, ${selectedItem.y.toFixed(1)}% top to ${x.toFixed(1)}% left, ${y.toFixed(1)}% top. The second reference image is this exact item: preserve its design, color, material and scale. Remove it completely from the old spot and restore the exposed wall or floor. Place it clearly at the destination, rotating only if needed. Do not duplicate it or move any other object. Preserve all architecture and keep doors, windows and walkways clear.`);
       return;
     }
-    setIdentifying(true);setIdentifyError('');setSelectedItem(undefined);
+    setIdentifying(true);setIdentifyError('');if(moveStage!=='choose-second')setSelectedItem(undefined);
     try{
       const [image,crop]=await Promise.all([prepareVisionUpload(design.image),cropAroundPoint(design.image,x,y)]);
       const form=new FormData();form.append('image',image,'current-design.jpg');form.append('crop',crop,'selected-area.png');form.append('x',String(x));form.append('y',String(y));form.append('style',design.style);form.append('palette',project.color_palette||'neutral');
+      if(moveStage!=='off'){form.append('selection_mode','furniture');if(categoryHint)form.append('category_hint',categoryHint)}
       const response=await fetch('/api/designs/identify-item',{method:'POST',body:form});
       const result=await response.json();
       if(!response.ok)throw new Error(result.error||'Could not identify this item.');
-      setSelectedItem(result);
-      if(moveStage==='choose-item')setMoveStage('choose-place');
-      else{setWholeRoomShopping(false);setShoppingOpen(true)}
+      if(moveStage==='choose-second'){
+        setSecondItem(result);setMoveStage('ready-swap');setSelectedPreset(`Swap ${selectedItem?.label} & ${result.label}`);setInstruction(`Swap the complete ${selectedItem?.category} and ${result.category}.`);setUseSelectionMask(false);
+      }else{
+        setSelectedItem(result);
+        if(moveStage!=='off')setMoveStage('confirm-item');
+        else{setWholeRoomShopping(false);setShoppingOpen(true)}
+      }
     }catch(reason){
-      setSelectedItem({category:'decor',label:'Choose item below',x,y,query:'',storeLinks:[]});
+      if(moveStage==='off')setSelectedItem({category:'decor',label:'Choose item below',x,y,query:'',storeLinks:[]});
       setIdentifyError(reason instanceof Error?reason.message:'Choose the item manually below.');
     }finally{setIdentifying(false)}
   }
 
+  function startSwap(){
+    setMoveKind('swap');setMoveStage('choose-item');setSelectedItem(undefined);setSecondItem(undefined);setMoveDestination(undefined);setCategoryHint('');setIdentifyError('');setEditError('');
+  }
+
   function toggleMoveMode(){
     if(moveStage==='off'){
-      setMoveStage('choose-item');setSelectedItem(undefined);setMoveDestination(undefined);setIdentifyError('');setEditError('');
+      setMoveKind('move');setCategoryHint('');setSecondItem(undefined);setMoveStage('choose-item');setSelectedItem(undefined);setMoveDestination(undefined);setIdentifyError('');setEditError('');
     }else{
       setMoveStage('off');setSelectedItem(undefined);setMoveDestination(undefined);setInstruction('');setSelectedPreset('');setUseSelectionMask(false);setIdentifyError('');setEditError('');
     }
@@ -231,10 +247,16 @@ export default function LocalResultPage(){
     if(!design||!instruction.trim()||editing)return;
     setEditing(true);setEditError('');
     try{
+      const moving=moveStage==='ready'||moveStage==='ready-swap';
+      const upload=moving?await prepareVisionUpload(design.image):design.image;
       const form=new FormData();
-      form.append('image',design.image,'current-design.png');
+      form.append('image',upload,moving?'current-design.jpg':'current-design.png');
       form.append('instruction',instruction.trim());
-      if(useSelectionMask&&selectedItem){
+      if(moving&&selectedItem){
+        form.append('operation',moveKind);form.append('selection',JSON.stringify(selectedItem));form.append('destination',JSON.stringify(moveKind==='swap'?secondItem:moveDestination));
+        if(selectedItem.polygon?.length){const reference=await prepareVisionUpload(await createObjectReference(design.image,selectedItem.polygon));form.append('object_reference',reference,'furniture-reference.jpg')}
+      }
+      if(!moving&&useSelectionMask&&selectedItem){
         const mask=await createSelectionMask(design.image,selectedItem.polygon||[],moveDestination);
         form.append('mask',mask,'selection-mask.png');
         if(moveDestination){
@@ -262,7 +284,7 @@ export default function LocalResultPage(){
   if(error)return <section className="card p-8"><h1 className="text-3xl font-semibold">Saved design</h1><p className="mt-3 text-red-700">{error}</p><Link href="/new-project" className="btn-primary inline-block mt-6">Create another</Link></section>;
   if(!design||!url)return <div className="card p-8">Opening your saved AI design…</div>;
   const project=design.project as {name?:string;color_palette?:string};
-  const moveHelp=moveStage==='choose-item'?'Tap the furniture you want to move':moveStage==='choose-place'?`Now tap where to move ${selectedItem?.label.toLowerCase()||'it'}`:moveStage==='ready'?`${selectedItem?.label||'Item'} will move to the gold marker`:'';
+  const moveHelp=moveStage==='choose-item'?'Choose Bed or Desk below, then tap it':moveStage==='confirm-item'?`Confirm selected furniture: ${selectedItem?.label}`:moveStage==='choose-second'?'Tap the second furniture item to swap':moveStage==='ready-swap'?`Swap ${selectedItem?.label} and ${secondItem?.label}`:moveStage==='choose-place'?`Now tap where to move ${selectedItem?.label.toLowerCase()||'it'}`:moveStage==='ready'?`${selectedItem?.label||'Item'} will move to the gold marker`:'';
 
   return <div className="space-y-6">
     <RoomShopping design={design} selected={wholeRoomShopping?undefined:selectedItem} open={shoppingOpen} onClose={closeShopping}/>
@@ -282,13 +304,17 @@ export default function LocalResultPage(){
           {moveStage==='off'&&<button type="button" onClick={()=>{setWholeRoomShopping(true);setShoppingOpen(true)}} className="rounded-full bg-white/95 px-4 py-3 text-sm font-bold text-black shadow-lg">$ Shop room</button>}
           {moveStage!=='off'&&<span className="max-w-[58%] rounded-2xl bg-white/95 px-3 py-2 text-right text-xs font-semibold text-black shadow-lg">{moveHelp}</span>}
         </div>
-        {moveStage==='ready'&&<div className="absolute bottom-3 left-3 right-3 z-10 flex gap-2">
-          <button type="button" onClick={()=>{setMoveStage('choose-place');setMoveDestination(undefined)}} disabled={editing} className="rounded-2xl bg-white/95 px-4 py-3 text-sm font-semibold text-black shadow-lg">Choose another spot</button>
-          <button type="button" onClick={()=>void runEdit()} disabled={editing} className="min-w-0 flex-1 rounded-2xl bg-black px-4 py-3 text-sm font-bold text-white shadow-lg disabled:opacity-60">{editing?'Moving furniture…':`Move ${selectedItem?.label||'item'} here`}</button>
+        {(moveStage==='ready'||moveStage==='ready-swap')&&<div className="absolute bottom-3 left-3 right-3 z-10 flex gap-2">
+          <button type="button" onClick={()=>{setMoveStage(moveKind==='swap'?'choose-second':'choose-place');setSecondItem(undefined);setMoveDestination(undefined)}} disabled={editing} className="rounded-2xl bg-white/95 px-4 py-3 text-sm font-semibold text-black shadow-lg">Choose another spot</button>
+          <button type="button" onClick={()=>void runEdit()} disabled={editing} className="min-w-0 flex-1 rounded-2xl bg-black px-4 py-3 text-sm font-bold text-white shadow-lg disabled:opacity-60">{editing?'Rearranging & checking…':moveKind==='swap'?`Swap ${selectedItem?.label} & ${secondItem?.label}`:`Move ${selectedItem?.label||'item'} here`}</button>
         </div>}
       </div>
+      {moveStage!=='off'&&<div className="border-t bg-white p-4"><label className="block text-sm font-semibold">Furniture to select<select aria-label="Furniture to select" className="input mt-2" value={categoryHint} disabled={identifying||editing} onChange={event=>{setCategoryHint(event.target.value);if(moveStage==='confirm-item'){setSelectedItem(undefined);setMoveStage('choose-item')}}}><option value="">Detect large furniture automatically</option>{MOVE_ITEMS.map(item=><option key={item} value={item}>{item}</option>)}</select></label>{moveStage==='confirm-item'&&selectedItem&&<button type="button" className="btn-primary mt-3 w-full" onClick={()=>{setMoveStage(moveKind==='swap'?'choose-second':'choose-place');setCategoryHint('')}}>Use {selectedItem.label} · {moveKind==='swap'?'select second item':'choose destination'}</button>}{identifyError&&<p role="alert" className="mt-2 text-sm text-red-700">{identifyError}</p>}</div>}
       {moveStage!=='off'&&editError&&<p className="border-t border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800" role="alert">{editError}</p>}
     </section>
+
+    <div className="grid grid-cols-2 gap-3"><button type="button" onClick={startSwap} disabled={editing||identifying} className="btn-soft">⇄ Swap two items</button><button type="button" onClick={()=>{setLayoutsOpen(value=>!value);if(moveStage!=='off')toggleMoveMode()}} className="btn-primary">New layout ideas</button></div>
+    {layoutsOpen&&<RoomLayouts design={design} onUpdate={setDesign}/>}
 
     {selectedItem&&moveStage==='off'&&<section className="card p-6 md:p-8">
       <div className="kicker">Selected on the image</div>

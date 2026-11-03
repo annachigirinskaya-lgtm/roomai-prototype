@@ -1,5 +1,5 @@
 import type { ShoppingList } from '@/lib/shopping';
-export type LocalDesign={id:string;style:string;createdAt:number;project:Record<string,unknown>;image:Blob;parentId?:string;rootId?:string;editInstruction?:string;shopping?:ShoppingList};
+export type LocalDesign={id:string;style:string;createdAt:number;project:Record<string,unknown>;image:Blob;sourcePhotos?:Blob[];parentId?:string;rootId?:string;editInstruction?:string;shopping?:ShoppingList};
 const DB='roomai-local';
 const STORE='designs';
 

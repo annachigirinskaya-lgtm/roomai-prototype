@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { LAYOUT_IDEAS } from '@/lib/layouts';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { buildShoppingList } from '@/services/product-matcher';
@@ -40,7 +41,7 @@ export async function POST(req:NextRequest){
   for(let i=0;i<stylesToGenerate.length;i+=2){
     const batch=stylesToGenerate.slice(i,i+2);
     const results=await Promise.allSettled(batch.map(async style=>{
-      const styledProject={...project,style,layout_mode,source_image_url:project.source_image_url||''};
+      const styledProject={...project,style,layout_mode,layout_strategy:layout_mode==='rearrange'?LAYOUT_IDEAS[stylesToGenerate.indexOf(style)%LAYOUT_IDEAS.length].id:undefined,source_image_url:project.source_image_url||''};
       const output=await generateFromRoom(source,mime,styledProject,products,references);
       const imagePath=`${user.id}/${project.id}/${crypto.randomUUID()}.png`;
       const {error:uErr}=await admin.storage.from('generated-designs').upload(imagePath,output,{contentType:'image/png',upsert:false});

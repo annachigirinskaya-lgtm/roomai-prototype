@@ -40,7 +40,10 @@ export default function RoomShopping({design,selected,open,onClose}:{design:Loca
       const data=await readShoppingResponse(response);
       if(controller.signal.aborted)return;
       setCheckedAt(data.checkedAt);
-      if(selection){cache.current.set(`${selection.category}:${selection.x}:${selection.y}`,data);setMatches(data.items)}
+      if(selection){
+        cache.current.set(`${selection.category}:${selection.x}:${selection.y}`,data);setMatches(data.items);
+        if(!selected&&list){const target=list.items.find(item=>item.category===selection.category&&item.x===selection.x&&item.y===selection.y);if(target&&data.items[0])await persist({...list,checkedAt:data.checkedAt,items:list.items.map(item=>item.id===target.id?{...data.items[0],id:item.id,quantity:item.quantity,included:item.included}:item)})}
+      }
       else{await persist(data)}
     }catch(reason){
       if(!controller.signal.aborted)setError(reason instanceof Error&&reason.name!=='SyntaxError'&&reason.name!=='TypeError'?reason.message:'Product search could not connect. Keep this page open and try again.');
@@ -103,6 +106,8 @@ export default function RoomShopping({design,selected,open,onClose}:{design:Loca
             {over&&<p className="mt-2 text-sm">These matches exceed your budget. Keep existing pieces or choose less expensive alternatives before buying.</p>}
           </div>}
         </>}
+        {selected&&!busy&&<button type="button" onClick={()=>void search(selected)} className="btn-soft w-full">Check current retailer price</button>}
+        {list?.warning&&!selected&&<p role="status" className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-900">{list.warning}</p>}
         {busy&&<p role="status" className="rounded-2xl bg-stone-100 p-4">Searching retailer pages. Prices will appear here when available…</p>}
         {error&&<div role="alert" className="rounded-2xl bg-red-50 p-4 text-red-800"><p>{error}</p><button type="button" onClick={()=>void search(selected)} className="mt-2 underline">Try again</button></div>}
         {saveError&&<p role="alert" className="text-sm text-amber-800">{saveError}</p>}
@@ -111,6 +116,7 @@ export default function RoomShopping({design,selected,open,onClose}:{design:Loca
           <p className="mt-2 font-medium">{item.title}</p><p className="mt-1 text-sm text-stone-600">{item.description}</p>
           {item.price!==null&&item.quantity>1&&<p className="mt-2 text-sm">{money(item.price)} each · {money(item.price*item.quantity)} for {item.quantity}</p>}
           {item.productUrl?<><a href={item.productUrl} target="_blank" rel="noopener noreferrer" className="btn-soft mt-3 block text-center">View product · {item.store}</a>{item.priceQuote&&<p className="mt-2 text-xs text-stone-500">Retailer price text: {item.priceQuote}</p>}</>:<a href={`https://www.amazon.com/s?k=${encodeURIComponent(`${design.style} ${item.description||item.category}`)}`} target="_blank" rel="noopener noreferrer" className="mt-3 block text-sm underline">Search similar items on Amazon</a>}
+          {!selected&&item.price===null&&<button type="button" disabled={busy} onClick={()=>void search({category:item.category,label:item.category,x:item.x,y:item.y})} className="btn-soft mt-3 w-full disabled:opacity-50">Find a price for this item</button>}
           {!selected&&<label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={item.included} onChange={event=>{if(list)void persist({...list,items:list.items.map(current=>current.id===item.id?{...current,included:event.target.checked}:current)})}}/>Include in purchase total</label>}
         </article>)}
         {!!shown.length&&<p className="text-xs text-stone-500">Prices found {checkedAt?new Date(checkedAt).toLocaleString():''}. Retailer prices may change; check the selected variant at checkout. Delivery, sales tax and installation are not included. Products are similar matches to the AI design.</p>}

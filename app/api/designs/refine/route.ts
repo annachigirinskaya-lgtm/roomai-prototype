@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { refineRoomDesign } from '@/services/ai-image';
+import { refineRoomDesign, generateFromRoom } from '@/services/ai-image';
 import { editorAccess } from '@/lib/design-access';
+import { furnitureInstruction } from '@/lib/furniture-operation';
+import { layoutInstruction } from '@/lib/layouts';
+import { verifyLayoutChange } from '@/services/verify-layout';
+import { STYLES } from '@/lib/catalog';
+import type { ProjectInput } from '@/lib/types';
+import sharp from 'sharp';
 
 export const runtime='nodejs';
 export const maxDuration=300;
@@ -32,23 +38,42 @@ export async function POST(req:NextRequest){
     const mask=data.get('mask');
     const objectReference=data.get('object_reference');
     const rawInstruction=data.get('instruction');
-    const instruction=typeof rawInstruction==='string'?rawInstruction.trim():'';
+    const operation=String(data.get('operation')||'detail');
+    if(!['detail','move','swap','layout'].includes(operation))return NextResponse.json({error:'Choose a valid editing action.'},{status:400});
+    let instruction=typeof rawInstruction==='string'?rawInstruction.trim():'';
+    if(operation==='move'||operation==='swap')instruction=furnitureInstruction(operation,JSON.parse(String(data.get('selection')||'null')),JSON.parse(String(data.get('destination')||'null')));
     if(!(image instanceof File))return NextResponse.json({error:'The current design image is required.'},{status:400});
-    if(!instruction)return NextResponse.json({error:'Describe the detail you want to change.'},{status:400});
+    if(!instruction&&operation!=='layout')return NextResponse.json({error:'Describe the detail you want to change.'},{status:400});
     if(instruction.length>MAX_INSTRUCTION_LENGTH)return NextResponse.json({error:'Keep the change request under 1,200 characters.'},{status:400});
     if(image.size>MAX_IMAGE_BYTES)return NextResponse.json({error:'The design image must be smaller than 20 MB.'},{status:413});
     if(!['image/jpeg','image/png','image/webp'].includes(image.type))return NextResponse.json({error:'Use a JPG, PNG or WebP design image.'},{status:415});
     if(mask!==null&&!(mask instanceof File))return NextResponse.json({error:'The selected-area mask is invalid.'},{status:400});
     if(mask instanceof File&&(mask.type!=='image/png'||mask.size>MAX_IMAGE_BYTES))return NextResponse.json({error:'The selected-area mask must be a PNG smaller than 20 MB.'},{status:415});
     if(objectReference!==null&&!(objectReference instanceof File))return NextResponse.json({error:'The selected furniture reference is invalid.'},{status:400});
-    if(objectReference instanceof File&&(objectReference.type!=='image/png'||objectReference.size>MAX_IMAGE_BYTES))return NextResponse.json({error:'The selected furniture reference must be a PNG smaller than 20 MB.'},{status:415});
-    const output=await refineRoomDesign(
-      Buffer.from(await image.arrayBuffer()),
+    if(objectReference instanceof File&&(!['image/png','image/jpeg','image/webp'].includes(objectReference.type)||objectReference.size>MAX_IMAGE_BYTES))return NextResponse.json({error:'Use a PNG, JPG or WebP furniture reference smaller than 20 MB.'},{status:415});
+    const source=Buffer.from(await image.arrayBuffer());
+    let output:Buffer;
+    if(operation==='layout'){
+      const idea=String(data.get('layout_strategy')||'');
+      if(!layoutInstruction(idea))return NextResponse.json({error:'Choose a layout idea.'},{status:400});
+      const project=JSON.parse(String(data.get('project')||'{}')) as ProjectInput;
+      if(!STYLES.includes(project.style as never)||!Number.isFinite(Number(project.budget))||Number(project.budget)<50)return NextResponse.json({error:'Style and a budget of at least $50 are required.'},{status:400});
+      const refs=data.getAll('references');
+      if(refs.length>2||refs.some(file=>!(file instanceof File)||file.size>1500000||!['image/jpeg','image/png','image/webp'].includes(file.type)))return NextResponse.json({error:'Use up to two compressed room references.'},{status:400});
+      instruction=layoutInstruction(idea);
+      output=await generateFromRoom(source,image.type,{...project,budget:Number(project.budget),layout_mode:'rearrange',layout_strategy:idea},[],await Promise.all((refs as File[]).map(async file=>({source:Buffer.from(await file.arrayBuffer()),mime:file.type}))));
+    }else output=await refineRoomDesign(
+      source,
       image.type,
       instruction,
-      mask instanceof File?Buffer.from(await mask.arrayBuffer()):undefined,
-      objectReference instanceof File?Buffer.from(await objectReference.arrayBuffer()):undefined,
+      operation==='detail'&&mask instanceof File?Buffer.from(await mask.arrayBuffer()):undefined,
+      objectReference instanceof File?await sharp(Buffer.from(await objectReference.arrayBuffer())).png().toBuffer():undefined,
+      operation as 'detail'|'move'|'swap',
     );
+    if(operation!=='detail'){
+      await verifyLayoutChange(source,image.type,output,instruction);
+      return new Response(new Uint8Array(await sharp(output).jpeg({quality:90}).toBuffer()),{headers:{'content-type':'image/jpeg','cache-control':'private, no-store'}});
+    }
     return new Response(new Uint8Array(output),{status:200,headers:{'content-type':'image/png','cache-control':'private, no-store'}});
   }catch(error:any){
     console.error('Design refinement failed',error);

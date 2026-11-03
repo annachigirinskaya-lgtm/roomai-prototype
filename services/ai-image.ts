@@ -2,11 +2,12 @@ import OpenAI, { toFile } from 'openai';
 import { Product, ProjectInput } from '@/lib/types';
 import { STYLE_GUIDANCE } from '@/lib/catalog';
 import { preserveOutsideMask } from './masked-edit';
+import { layoutInstruction } from '@/lib/layouts';
 export function designPrompt(p:ProjectInput,products:Product[]){const shopping=products.map(x=>`${x.category}: ${x.title} (${x.store}, $${x.price})`).join('; ');const signature=STYLE_GUIDANCE[p.style]||p.style;return `Edit the PROVIDED PHOTO into a complete, photorealistic, professionally designed and fully furnished ${p.room_type}. This is an image edit, not a request for a new or similar room: the output must remain unmistakably the exact same room and camera view.
 
 NON-NEGOTIABLE ROOM FIDELITY: before designing, inspect and internally inventory every visible structural element in the source photo. Reproduce every hinged door, sliding door, doorway, passage, window, balcony opening, column, vent, switch, outlet, ceiling edge, floor boundary, kitchen cabinet, countertop and fixed fixture one-for-one in the identical position, size and perspective. Preserve the exact room geometry, dimensions, wall lengths, camera position, field of view, ceiling height, flooring and kitchen footprint. The before and after images must align if overlaid. Never remove, cover, narrow, move, resize or replace an existing door, doorway, window, balcony opening or kitchen element. Never build a feature wall, marble slab, panel, cabinet, fireplace, television or furniture across an opening. Use only genuinely solid wall areas for wall treatments and place furniture within the existing free floor area. Never invent a different property.
 
-FURNITURE LAYOUT: ${p.layout_mode==='rearrange'?'The client explicitly permits a new furniture arrangement. Propose a functional arrangement only inside the existing room; preserve architecture and keep all doors, windows and walkways accessible.':'KEEP THE ORIGINAL FURNITURE ARRANGEMENT. Preserve the exact position, orientation, footprint and scale of every existing major furniture item. In particular, keep the bed headboard against the same wall, its long axis in the same direction and the same clearances around it. Never rotate the bed, push it into another corner, move a sofa or relocate a table. You may update their materials, upholstery, headboard design, bedding and decorative styling while retaining their anchors and orientation. Add new decor only in genuinely available space.'}
+FURNITURE LAYOUT: ${p.layout_mode==='rearrange'?`NEW FLOOR PLAN REQUIRED: treat the existing furniture arrangement as removable, not as a template. Mentally clear all movable furniture first, then redesign the functional zones from scratch. Move at least two major furniture pieces to substantially different usable locations, with different orientations where appropriate. A restyling with the bed/desk/sofa left in the same places is INVALID. ${layoutInstruction(p.layout_strategy)} Preserve architecture and keep every door, window and walkway accessible. Retain items named by the client but you may relocate them. Do not add floor space or hide furniture outside the frame to pretend it was moved.`:'KEEP THE ORIGINAL FURNITURE ARRANGEMENT. Preserve the exact position, orientation, footprint and scale of every existing major furniture item. In particular, keep the bed headboard against the same wall, its long axis in the same direction and the same clearances around it. Never rotate the bed, push it into another corner, move a sofa or relocate a table. You may update their materials, upholstery, headboard design, bedding and decorative styling while retaining their anchors and orientation. Add new decor only in genuinely available space.'}
 
 MULTIPLE ROOM VIEWS: when additional input images are provided, the FIRST image is the primary camera view and defines the output perspective and aspect ratio. All later images show other angles of this SAME room and are spatial references only. Cross-check doors, windows, furniture anchors and wall relationships against them. Do not combine camera views, produce a collage, copy another angle as the output, or infer new architecture from a different viewpoint.
 
@@ -84,7 +85,7 @@ export async function generateFromRoom(source:Buffer,mime:string,p:ProjectInput,
   return Buffer.from(b64,'base64');
 }
 
-export function refinementPrompt(instruction:string,hasMask=false,hasObjectReference=false){
+export function refinementPrompt(instruction:string,hasMask=false,hasObjectReference=false,operation:'detail'|'move'|'swap'='detail'){
   return `Edit the FIRST PROVIDED IMAGE, which is the existing interior design. This is a precise revision of the same image, not a new room design.
 
 ${hasObjectReference?'The SECOND PROVIDED IMAGE is a transparent cutout of the exact selected furniture item from the first image. Use it only as the identity reference for the item being relocated. The final output must remain the first room image and must not become a collage or product cutout.':''}
@@ -93,14 +94,14 @@ REQUESTED CHANGE: ${instruction}
 
 ${hasMask?'MASKED WHOLE-OBJECT EDIT: the transparent areas of the mask on the FIRST image mark both the old object position and its approved destination. For relocation, the result is invalid unless the selected item is visibly absent from the old position and visibly present at the destination. Reconstruct the old wall or floor, then render the same recognizable item at the destination with correct scale, perspective, orientation, contact shadows and lighting. Never leave fragments, duplicate the object, alter only a rectangular crop, or create a hard border. Keep opaque areas visually unchanged.':''}
 
-NON-NEGOTIABLE: make only the requested change. Preserve the exact camera position, crop, perspective, room dimensions, ceiling, floor, lighting direction and the position and size of every door, doorway, passage, window, balcony opening, column, vent, switch, outlet, kitchen cabinet, countertop and fixed fixture. Keep all furniture, decor, materials and colors unchanged unless the request explicitly names them. Never close, cover, move, narrow, resize or invent an architectural opening. Never move a wall or redesign the room layout.
+NON-NEGOTIABLE: make only the requested change. Preserve the exact camera position, crop, perspective, room dimensions, ceiling, floor, lighting direction and the position and size of every door, doorway, passage, window, balcony opening, column, vent, switch, outlet, kitchen cabinet, countertop and fixed fixture. Keep all furniture, decor, materials and colors unchanged unless the request explicitly names them. Never close, cover, move, narrow, resize or invent an architectural opening. Never move a wall. ${operation==='detail'?'Do not redesign the room layout.':'The requested relocation of the named furniture IS authorized and REQUIRED. Re-render the whole room coherently, with correct perspective, shadows and newly exposed backgrounds. Do not paste or blend rectangular image fragments. The original placement of the named furniture must change visibly. Ignore small decorations on top of or in front of the named furniture: move the complete furniture item. If exchanging two items, remove BOTH from their old footprints before placing each in the other zone.'}
 
 If the request concerns a wall panel, feature wall, marble, slats, millwork or fireplace, resize or replace that finish only within the existing uninterrupted solid wall area. Leave the remainder as a realistic finished wall matching the room, and do not extend any treatment across a door, doorway, window or balcony opening.
 
 Return one seamless photorealistic interior photograph at the same aspect ratio, with no text, labels, arrows, dimensions, before/after split, collage or watermark.`;
 }
 
-export async function refineRoomDesign(source:Buffer,mime:string,instruction:string,mask?:Buffer,objectReference?:Buffer){
+export async function refineRoomDesign(source:Buffer,mime:string,instruction:string,mask?:Buffer,objectReference?:Buffer,operation:'detail'|'move'|'swap'='detail'){
   if(!process.env.OPENAI_API_KEY)throw new Error('OPENAI_API_KEY missing');
   const client=new OpenAI({apiKey:process.env.OPENAI_API_KEY});
   const file=await toFile(source,'design',{type:mime});
@@ -110,7 +111,7 @@ export async function refineRoomDesign(source:Buffer,mime:string,instruction:str
     model:IMAGE_MODEL,
     image:referenceFile?[file,referenceFile]:file,
     ...(maskFile?{mask:maskFile}:{}),
-    prompt:refinementPrompt(instruction,Boolean(maskFile),Boolean(referenceFile)),
+    prompt:refinementPrompt(instruction,Boolean(maskFile),Boolean(referenceFile),operation),
     size:outputSize(source,mime,IMAGE_MODEL),
     quality:IMAGE_QUALITY,
     ...(IMAGE_MODEL.startsWith('gpt-image-2')?{}:{input_fidelity:'high' as const}),
