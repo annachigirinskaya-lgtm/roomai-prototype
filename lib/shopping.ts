@@ -13,8 +13,8 @@ export function retailerUrl(value:unknown):string|null{
     const url=new URL(value);
     const host=url.hostname.toLowerCase();
     if(url.protocol!=='https:'||url.username||url.password)return null;
-    if(!['amazon.com','walmart.com','ikea.com','target.com'].some(domain=>host===domain||host.endsWith(`.${domain}`)))return null;
-    if(!(/\/dp\/[A-Z0-9]{10}(?:\/|$)/i.test(url.pathname)||/\/gp\/product\/[A-Z0-9]{10}(?:\/|$)/i.test(url.pathname)||/\/ip\//.test(url.pathname)||/\/p\//.test(url.pathname)))return null;
+    if(!['amazon.com','walmart.com','ikea.com','target.com','wayfair.com','homedepot.com','lowes.com','tribesigns.com'].some(domain=>host===domain||host.endsWith(`.${domain}`)))return null;
+    if(!(/\/dp\/[A-Z0-9]{10}(?:\/|$)/i.test(url.pathname)||/\/gp\/product\/[A-Z0-9]{10}(?:\/|$)/i.test(url.pathname)||/\/ip\//.test(url.pathname)||/\/p\//.test(url.pathname)||/\/pd\//.test(url.pathname)||/\/pdp\//.test(url.pathname)||/\/products\//.test(url.pathname)))return null;
     url.hash='';return url.href;
   }catch{return null}
 }

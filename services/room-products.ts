@@ -41,6 +41,7 @@ export async function findRoomProducts(client:OpenAI,input:{imageUrl:string;styl
   if(!items.length)throw new Error('No visible furniture was identified. Try tapping the center of one item.');
   const issues:string[]=[];
   const diagnostics:string[]=[];
+  const priceEvidence:unknown[]=[];
   // Batches keep retailer queries small and isolate one failed lookup from the rest.
   const batches:ShoppingItem[][]=[];for(let index=0;index<items.length;index+=4)batches.push(items.slice(index,index+4));
   for(let index=0;index<batches.length;index+=2){
@@ -53,7 +54,7 @@ export async function findRoomProducts(client:OpenAI,input:{imageUrl:string;styl
         };
         let found;
         try{
-          found=await client.responses.create({...request,tools:[{type:'web_search',search_context_size:'medium',filters:{allowed_domains:['amazon.com','walmart.com','target.com','ikea.com']},user_location:{type:'approximate',country:'US'}}],tool_choice:'required',include:['web_search_call.action.sources']},{maxRetries:1});
+          found=await client.responses.create({...request,tools:[{type:'web_search',search_context_size:'medium',filters:{allowed_domains:['amazon.com','walmart.com','target.com','ikea.com','wayfair.com','homedepot.com','lowes.com','tribesigns.com']},user_location:{type:'approximate',country:'US'}}],tool_choice:'required',include:['web_search_call.action.sources']},{maxRetries:1});
         }catch(error){
           if((error as {status?:number})?.status!==400)throw error;
           // Older provider/model combinations only accept the preview tool.
@@ -78,6 +79,7 @@ export async function findRoomProducts(client:OpenAI,input:{imageUrl:string;styl
           });
           matches=modelJson(formatted.output_text).items;
         }
+        if(process.env.VERCEL_ENV==='preview')priceEvidence.push({candidates:matches.map(item=>({id:item.id,title:item.title,price:item.price,priceQuote:item.priceQuote,productUrl:item.productUrl})),sources});
         for(const item of batch){
           const match=matches.find(match=>match?.id===item.id);if(!match)continue;
           const normalized=normalizeShoppingItems([{...item,...match,quantity:item.quantity,x:item.x,y:item.y,included:item.included}],sources)[0];
@@ -91,5 +93,5 @@ export async function findRoomProducts(client:OpenAI,input:{imageUrl:string;styl
     }));
   }
   const missing=items.filter(item=>item.price===null).length;
-  return {items,checkedAt:new Date().toISOString(),...(process.env.VERCEL_ENV==='preview'&&diagnostics.length?{diagnostics}:{}),...(missing?{warning:issues.length?`Some retailer searches failed (${[...new Set(issues)].join(', ')}). Confirmed prices are shown; ${missing} item group(s) remain unpriced.`:`No reliable retailer price was found for ${missing} item group(s). These are excluded from the known-price subtotal.`}:{})};
+  return {items,checkedAt:new Date().toISOString(),...(process.env.VERCEL_ENV==='preview'&&items.some(item=>item.price===null)?{priceEvidence}:{}),...(process.env.VERCEL_ENV==='preview'&&diagnostics.length?{diagnostics}:{}),...(missing?{warning:issues.length?`Some retailer searches failed (${[...new Set(issues)].join(', ')}). Confirmed prices are shown; ${missing} item group(s) remain unpriced.`:`No reliable retailer price was found for ${missing} item group(s). These are excluded from the known-price subtotal.`}:{})};
 }
