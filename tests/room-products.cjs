@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict');const fs=require('node:fs');const vm=require('node:vm');const ts=require('typescript');
 function load(path,deps={}){const output={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:output,process,URL,console,Buffer,fetch,AbortSignal,require:name=>deps[name]||require(name)});return output}
-const shopping=load('lib/shopping.ts');const {findRoomProducts,modelJson,shoppingFailure}=load('services/room-products.ts',{'@/lib/shopping':shopping,'@/services/retailer-price':{confirmRetailerPrice:async()=>64.99}});
+const shopping=load('lib/shopping.ts');const alternatives=load('lib/retailer-alternatives.ts');const {findRoomProducts,modelJson,shoppingFailure}=load('services/room-products.ts',{'@/lib/shopping':shopping,'@/lib/retailer-alternatives':alternatives,'@/services/retailer-price':{confirmRetailerPrice:async url=>url.includes('lagkapten')||url.includes('B012345678')?64.99:null}});
 const {retailerPrice}=load('services/retailer-price.ts',{'@/lib/shopping':shopping});
 assert.equal(retailerPrice('<script type="application/ld+json">'+JSON.stringify({'@type':'Product',offers:{'@type':'Offer',price:'64.99',priceCurrency:'USD'}})+'</script>'),64.99);
 assert.equal(retailerPrice('<p>Search result says $169.99</p>'),null);
@@ -18,7 +18,7 @@ const {furnitureInstruction}=load('lib/furniture-operation.ts');
  const compatible=await findRoomProducts(compatibility,input);assert.equal(compatible.items[0].price,64.99);assert.equal(compatibilityCalls.filter(body=>body.tools?.[0].type==='web_search_preview').length,1);
  const textSearch={responses:{create:async body=>{if(body.instructions?.startsWith('EXTRACT_SEARCH_PRODUCTS'))return {output_text:JSON.stringify({items:[{id:'item-0',title:'Desk',price:129.99,priceQuote:'$129.99',productUrl:url}]})};if(!body.tools)return mock.responses.create(body);return {output_text:'Desk available for $129.99 at '+url,output:[{type:'web_search_call',action:{type:'search',sources:[{url}]}}]}}}};assert.equal((await findRoomProducts(textSearch,input)).items[0].price,64.99);
  const failing={responses:{create:async body=>{if(!body.tools)return mock.responses.create(body);throw {status:400,param:'text.format'}}}};
- const partial=await findRoomProducts(failing,input);assert.equal(partial.items.length,2);assert.equal(partial.items[0].price,null);assert.match(partial.warning,/SEARCH_CONFIGURATION/);
+ const partial=await findRoomProducts(failing,input);assert.equal(partial.items.length,2);assert.equal(partial.items[0].price,64.99);assert.match(partial.items[0].title,/Budget alternative/);assert.match(partial.items[0].productUrl,/ikea.com/);assert.match(partial.warning,/SEARCH_CONFIGURATION/);
  assert.equal(modelJson('prefix {"items":[{"description":"{a} \\\" quoted"}]} citation').items.length,1);
  assert.equal(shoppingFailure({code:'insufficient_quota'}).code,'SEARCH_BALANCE');
  const bed={category:'bed',x:20,y:55},desk={category:'desk',x:80,y:55};

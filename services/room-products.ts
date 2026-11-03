@@ -1,6 +1,7 @@
 import type OpenAI from 'openai';
 import { normalizeShoppingItems, type ShoppingItem, type ShoppingList } from '@/lib/shopping';
 import { confirmRetailerPrice } from '@/services/retailer-price';
+import { retailerAlternative } from '@/lib/retailer-alternatives';
 
 export function modelJson(text:string):{items:Record<string,unknown>[]} {
   // Search responses may add citations outside their requested JSON object.
@@ -44,6 +45,7 @@ export async function findRoomProducts(client:OpenAI,input:{imageUrl:string;styl
   if(!items.length)throw new Error('No visible furniture was identified. Try tapping the center of one item.');
   const issues:string[]=[];
   const pageChecks=new Map<string,Promise<number|null>>();
+  const originalDescriptions=new Map(items.map(item=>[item.id,item.description]));
   // Batches keep retailer queries small and isolate one failed lookup from the rest.
   const batches:ShoppingItem[][]=[];for(let index=0;index<items.length;index+=4)batches.push(items.slice(index,index+4));
   for(let index=0;index<batches.length;index+=2){
@@ -85,7 +87,7 @@ export async function findRoomProducts(client:OpenAI,input:{imageUrl:string;styl
         }
         await Promise.all(batch.map(async item=>{
           const match=matches.find(match=>match?.id===item.id);if(!match)return;
-          const normalized=normalizeShoppingItems([{...item,...match,quantity:item.quantity,x:item.x,y:item.y,included:item.included}],sources)[0];
+          const normalized=normalizeShoppingItems([{...item,...match,category:item.category,quantity:item.quantity,x:item.x,y:item.y,included:item.included}],sources)[0];
           if(normalized){
             if(normalized.productUrl){
               if(!pageChecks.has(normalized.productUrl))pageChecks.set(normalized.productUrl,confirmRetailerPrice(normalized.productUrl));
@@ -101,6 +103,12 @@ export async function findRoomProducts(client:OpenAI,input:{imageUrl:string;styl
       }
     }));
   }
+  await Promise.all(items.filter(item=>item.price===null).map(async item=>{
+    const alternative=retailerAlternative(item.category,originalDescriptions.get(item.id)||'');if(!alternative)return;
+    if(!pageChecks.has(alternative.url))pageChecks.set(alternative.url,confirmRetailerPrice(alternative.url));
+    const price=await pageChecks.get(alternative.url)!;if(price===null)return;
+    Object.assign(item,{title:alternative.title,description:alternative.description,productUrl:alternative.url,store:new URL(alternative.url).hostname,price,priceQuote:`USD ${price.toFixed(2)}`});
+  }));
   const missing=items.filter(item=>item.price===null).length;
   return {items,checkedAt:new Date().toISOString(),...(missing?{warning:issues.length?`Some retailer searches failed (${[...new Set(issues)].join(', ')}). Confirmed prices are shown; ${missing} item group(s) remain unpriced.`:`No reliable retailer price was found for ${missing} item group(s). These are excluded from the known-price subtotal.`}:{})};
 }
