@@ -1,0 +1,18 @@
+import type { ProjectInput } from './types';
+
+export function designComposition(project:ProjectInput){
+  if(project.style!=='Modern'&&project.style!=='Luxury')return '';
+  const bedroom=project.room_type==='Bedroom'||project.room_type==='Kids Room';
+  const luxury=project.style==='Luxury';
+  const focal=bedroom
+    ?luxury?'Make the bed the couture focal point: a generous, softly curved or channel-upholstered headboard and a carefully composed backdrop on the existing solid wall. Layer a tailored cover, throw and contrasting cushions; use refined bedside lighting.':'Make the bed wall a crisp contemporary composition: a clean upholstered headboard, restrained painted color blocking or shallow geometric trim on the existing wall, integrated-looking bedside lighting and a deliberate contrasting textile accent.'
+    :luxury?'Compose the main functional furniture as a sculptural focal group, with tailored upholstery, an elegant silhouette and a refined surface or wall treatment appropriate to this room type.':'Compose the main functional furniture with clean silhouettes, deliberate asymmetry and a graphic focal wall or large contemporary artwork appropriate to this room type.';
+  const materials=luxury
+    ?'Use a visibly richer mix of upholstery, satin metal, glass or mirror and a small stone-effect detail. Wood is a secondary accent, not the dominant material. Prefer refined cream, taupe or client-selected colors with tonal depth and one darker or metallic accent. Avoid a room of matching brown wooden casegoods, generic oak desks and plain beige bedding.'
+    :'Use painted or matte surfaces, upholstery and restrained metal accents. Wood may appear in selected pieces, but must not dominate every cabinet, desk and bedside table. Use deliberate light-dark contrast within the requested palette. Modern must read as clean, graphic and architectural, rather than rustic, Scandinavian, Japandi or generic warm-wood contemporary.';
+  return `ROOM-SPECIFIC ${project.style.toUpperCase()} COMPOSITION FOR ${project.room_type.toUpperCase()}:
+${focal}
+${materials}
+SHOW A FINISHED DESIGN: resolve five visible design layers in the available view: (1) the focal composition; (2) contrasting materials; (3) layered lighting with a distinctive fixture or elegant lamp, not just two generic shaded lamps; (4) properly scaled coordinated textiles and window treatments where windows exist; (5) curated art or a mirror and a small intentional accessory grouping. Do not substitute a plant, a small picture and a throw for the whole design. Use ${luxury?'softly rounded silhouettes, lustrous highlights and tailored, layered elegance':'crisp lines, sculptural lighting and restrained graphic accents'} so Modern and Luxury remain visibly different even in the same beige palette. Do not add a sofa, chandelier, television or extra furniture simply because the style description mentions it if it does not suit the room type, clearances or budget.
+BUDGET PRIORITY: within the existing $${project.budget} total, prioritize the focal treatment, lighting and textiles over replacing every serviceable large item. Use paint, removable trim, affordable upholstery/textiles and small metal/glass/stone-look accessories when funds are limited. Never imply genuine marble, custom millwork or an unaffordable furniture suite. Preserve any item or finish the client specifically asked to keep. A visibly designed composition is required at every price tier; extra square footage and structural changes are never a design element.`;
+}

@@ -3,6 +3,7 @@ import { Product, ProjectInput } from '@/lib/types';
 import { STYLE_GUIDANCE } from '@/lib/catalog';
 import { preserveOutsideMask } from './masked-edit';
 import { layoutInstruction } from '@/lib/layouts';
+import { designComposition } from '@/lib/design-composition';
 export function designPrompt(p:ProjectInput,products:Product[]){const shopping=products.map(x=>`${x.category}: ${x.title} (${x.store}, $${x.price})`).join('; ');const signature=STYLE_GUIDANCE[p.style]||p.style;return `Edit the PROVIDED PHOTO into a complete, photorealistic, professionally designed and fully furnished ${p.room_type}. This is an image edit, not a request for a new or similar room: the output must remain unmistakably the exact same room and camera view.
 
 NON-NEGOTIABLE ROOM FIDELITY: before designing, inspect and internally inventory every visible structural element in the source photo. Reproduce every hinged door, sliding door, doorway, passage, window, balcony opening, column, vent, switch, outlet, ceiling edge, floor boundary, kitchen cabinet, countertop and fixed fixture one-for-one in the identical position, size and perspective. Preserve the exact room geometry, dimensions, wall lengths, camera position, field of view, ceiling height, flooring and kitchen footprint. The before and after images must align if overlaid. Never remove, cover, narrow, move, resize or replace an existing door, doorway, window, balcony opening or kitchen element. Never build a feature wall, marble slab, panel, cabinet, fireplace, television or furniture across an opening. Use only genuinely solid wall areas for wall treatments and place furniture within the existing free floor area. Never invent a different property.
@@ -15,6 +16,8 @@ DESIGN INTENSITY: make a substantial, clearly visible whole-room transformation 
 
 STYLE: apply one unmistakable style only: ${p.style}. Required visual signature: ${signature}. Do not drift into generic beige contemporary design and do not mix visual signatures from other catalog styles.
 
+${designComposition(p)}
+
 LIVING ROOM FUNCTION: if this is a living room, the finished design must include a clearly visible, realistically sized television and an intentional media composition unless the client explicitly asks for no TV. Place it only on an existing uninterrupted solid wall that can physically fit it. Integrate its surround, console and lighting into the selected style without covering, moving or narrowing any door, doorway, window or balcony opening.
 
 COLOR: ${p.color_palette}${p.custom_colors?`; requested custom colors: ${p.custom_colors}`:''}. Use this palette throughout furniture, textiles, finishes and accents with tonal depth rather than making everything one flat color.
@@ -23,7 +26,7 @@ BUDGET: the hard target is approximately $${p.budget} TOTAL for all NEW movable 
 
 CLIENT REQUIREMENTS: keep these existing items visibly recognizable: ${p.keep_items||'none specified'}. Replace or add: ${p.replace_items||'only the furniture, lighting, textiles, wall treatments and decor needed for a complete design; preserve serviceable major pieces whenever replacing them would break the total budget'}. Additional notes: ${p.notes||'none'}. ${shopping?`Use this real-product plan as visual inspiration: ${shopping}.`:''}
 
-FINAL ARCHITECTURE CHECK: compare the proposed result against the source photo before rendering. If the count, position or dimensions of any door, doorway, window, balcony opening, column, kitchen counter or fixed element differ, correct the design. Style the room around the architecture; never redesign the architecture itself.
+FINAL ARCHITECTURE CHECK: compare the proposed result against the source photo before rendering. If the count, position or dimensions of any door, doorway, window, balcony opening, column, kitchen counter or fixed element differ, correct the design. Never ADD a new door, window, doorway, niche or passage on a solid wall, and never turn decorative trim or mirrors into openings. Style the room around the architecture; never redesign the architecture itself.
 
 Render one seamless final interior photograph with accurate scale, perspective, contact shadows and believable warm lighting. Do not return a mood board, collage, split screen, empty room, floor plan, text, captions, labels or watermarks.`}
 export const IMAGE_MODEL=process.env.OPENAI_IMAGE_MODEL||'gpt-image-2';
