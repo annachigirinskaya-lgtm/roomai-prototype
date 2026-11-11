@@ -6,6 +6,7 @@ import { getLocalDesign, getLocalDesigns, saveLocalDesign, type LocalDesign } fr
 import BetaFeedback from '@/components/BetaFeedback';
 import RoomShopping from '@/components/RoomShopping';
 import RoomLayouts from '@/components/RoomLayouts';
+import RoomColors from '@/components/RoomColors';
 import { MOVE_ITEMS } from '@/lib/furniture-operation';
 import { prepareVisionUpload } from '@/lib/vision-upload';
 
@@ -132,6 +133,9 @@ export default function LocalResultPage(){
   const [secondItem,setSecondItem]=useState<SelectedItem>();
   const [categoryHint,setCategoryHint]=useState('');
   const [layoutsOpen,setLayoutsOpen]=useState(false);
+  const [colorsOpen,setColorsOpen]=useState(false);
+  const [colorEditing,setColorEditing]=useState(false);
+  useEffect(()=>{if(colorsOpen)document.getElementById('room-colors')?.scrollIntoView({behavior:'smooth',block:'start'})},[colorsOpen]);
   useEffect(()=>{if(layoutsOpen)document.getElementById('room-layouts')?.scrollIntoView({behavior:'smooth',block:'start'})},[layoutsOpen]);
   const [shoppingOpen,setShoppingOpen]=useState(false);
   const [wholeRoomShopping,setWholeRoomShopping]=useState(false);
@@ -171,7 +175,7 @@ export default function LocalResultPage(){
   }
 
   async function selectImageItem(event:MouseEvent<HTMLButtonElement>){
-    if(!design||identifying||editing)return;
+    if(!design||identifying||editing||colorEditing)return;
     const box=event.currentTarget.getBoundingClientRect();
     const x=((event.clientX-box.left)/box.width)*100;
     const y=((event.clientY-box.top)/box.height)*100;
@@ -203,10 +207,12 @@ export default function LocalResultPage(){
   }
 
   function startSwap(){
+    if(colorEditing)return;
     setMoveKind('swap');setMoveStage('choose-item');setSelectedItem(undefined);setSecondItem(undefined);setMoveDestination(undefined);setCategoryHint('');setIdentifyError('');setEditError('');
   }
 
   function toggleMoveMode(){
+    if(colorEditing)return;
     if(moveStage==='off'){
       setMoveKind('move');setCategoryHint('');setSecondItem(undefined);setMoveStage('choose-item');setSelectedItem(undefined);setMoveDestination(undefined);setIdentifyError('');setEditError('');
     }else{
@@ -228,7 +234,7 @@ export default function LocalResultPage(){
   }
 
   async function placeExactProduct(){
-    if(!design||!selectedItem||!productImage||placingProduct)return;
+    if(!design||!selectedItem||!productImage||placingProduct||colorEditing)return;
     setPlacingProduct(true);setProductError('');
     try{
       const form=new FormData();
@@ -244,7 +250,7 @@ export default function LocalResultPage(){
   }
 
   async function runEdit(){
-    if(!design||!instruction.trim()||editing)return;
+    if(!design||!instruction.trim()||editing||colorEditing)return;
     setEditing(true);setEditError('');
     try{
       const moving=moveStage==='ready'||moveStage==='ready-swap';
@@ -313,7 +319,9 @@ export default function LocalResultPage(){
       {moveStage!=='off'&&editError&&<p className="border-t border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800" role="alert">{editError}</p>}
     </section>
 
-    <div className="grid grid-cols-2 gap-3"><button type="button" onClick={startSwap} disabled={editing||identifying} className="btn-soft">⇄ Swap two items</button><button type="button" onClick={()=>{setLayoutsOpen(value=>!value);if(moveStage!=='off')toggleMoveMode()}} className="btn-primary">New layout ideas</button></div>
+    <button type="button" aria-expanded={colorsOpen} aria-controls="room-colors" disabled={editing||identifying||colorEditing} onClick={()=>{setColorsOpen(value=>!value);if(moveStage!=='off')toggleMoveMode();setLayoutsOpen(false)}} className="btn-soft w-full">Change colors</button>
+    {colorsOpen&&<RoomColors design={design} disabled={editing||identifying} onBusyChange={setColorEditing}/>}
+    <div className="grid grid-cols-2 gap-3"><button type="button" onClick={startSwap} disabled={editing||identifying||colorEditing} className="btn-soft">⇄ Swap two items</button><button type="button" disabled={colorEditing} onClick={()=>{setLayoutsOpen(value=>!value);setColorsOpen(false);if(moveStage!=='off')toggleMoveMode()}} className="btn-primary">New layout ideas</button></div>
     {layoutsOpen&&<RoomLayouts design={design} onUpdate={setDesign}/>}
 
     {selectedItem&&moveStage==='off'&&<section className="card p-6 md:p-8">
