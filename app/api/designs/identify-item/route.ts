@@ -1,12 +1,13 @@
 import OpenAI from 'openai';
 import { NextRequest, NextResponse } from 'next/server';
 import { editorAccess } from '@/lib/design-access';
+import { MOVE_ITEMS } from '@/lib/furniture-operation';
 
 export const runtime='nodejs';
 export const maxDuration=60;
 
 const MAX_IMAGE_BYTES=20*1024*1024;
-const CATEGORIES=['vase','flower arrangement','decorative bowl','tray','candle','books','sculpture','throw pillow','blanket','rug','sofa','sectional sofa','armchair','ottoman','pouf','bench','coffee table','side table','dining table','dining chair','bar stool','tv','tv console','soundbar','floor lamp','table lamp','ceiling light','chandelier','curtains','wall art','mirror','indoor plant','plant pot','wall panel','fireplace','shelving','cabinet','decor accessory'] as const;
+const CATEGORIES=['vase','flower arrangement','decorative bowl','tray','candle','books','sculpture','throw pillow','blanket','rug','sofa','sectional sofa','armchair','ottoman','pouf','bench','bed','mattress','headboard','nightstand','dresser','desk','desk chair','bookcase','coffee table','side table','dining table','dining chair','bar stool','tv','tv console','soundbar','floor lamp','table lamp','ceiling light','chandelier','curtains','wall art','mirror','indoor plant','plant pot','wall panel','fireplace','shelving','cabinet','decor accessory'] as const;
 function itemLabel(category:string){return category.replace(/\b\w/g,letter=>letter.toUpperCase())}
 
 function storeLinks(query:string){
@@ -30,6 +31,9 @@ export async function POST(req:NextRequest){
     const y=Math.max(0,Math.min(100,Number(data.get('y'))));
     const style=String(data.get('style')||'interior');
     const palette=String(data.get('palette')||'neutral');
+    const moving=data.get('selection_mode')==='furniture';
+    const hint=String(data.get('category_hint')||'');
+    if(hint&&!MOVE_ITEMS.includes(hint as typeof MOVE_ITEMS[number]))return NextResponse.json({error:'Choose a furniture item from the list.'},{status:400});
     if(!(image instanceof File))return NextResponse.json({error:'The design image is required.'},{status:400});
     if(!(crop instanceof File))return NextResponse.json({error:'The selected image area is required.'},{status:400});
     if(image.size>MAX_IMAGE_BYTES)return NextResponse.json({error:'The design image must be smaller than 20 MB.'},{status:413});
@@ -40,17 +44,20 @@ export async function POST(req:NextRequest){
     const cropBase64=Buffer.from(await crop.arrayBuffer()).toString('base64');
     const response=await client.responses.create({
       model:process.env.OPENAI_VISION_MODEL||'gpt-4.1-mini',
+      instructions:moving?`FURNITURE MOVE SELECTION: identify the COMPLETE large furniture at the tap, not small objects on it. A tap on a plant/vase/books resting on a desk selects the DESK; a tap on bedding selects the BED. Allowed categories: ${MOVE_ITEMS.join(', ')}. ${hint?`The user explicitly selected ${hint}. Find that complete item nearest the tap. If it is absent, return {"category":"not found","polygon":[]}.`:''} This instruction overrides the smallest-object rule below. Trace the full furniture silhouette in full-image coordinates.`:undefined,
       input:[{role:'user',content:[
-        {type:'input_text',text:`The first image is the full interior. The second image is a close-up centered exactly on the user's tap at ${x.toFixed(1)}% from the left and ${y.toFixed(1)}% from the top. Identify the smallest distinct visible object at the CENTER of the close-up, not the larger furniture behind or beneath it. For example, a vase on a table must be vase, not table; flowers inside a vase may be flower arrangement. Choose exactly one category from: ${CATEGORIES.join(', ')}. Return only the category name, nothing else.`},
-        {type:'input_image',image_url:`data:${image.type};base64,${base64}`,detail:'low'},
+        {type:'input_text',text:`The first image is the full interior. The second image is a close-up centered exactly on the user's tap at ${x.toFixed(1)}% from the left and ${y.toFixed(1)}% from the top. Identify the smallest distinct visible object at the CENTER of the close-up, not the larger furniture behind or beneath it. For example, a vase on a table must be vase, not table; flowers inside a vase may be flower arrangement. Choose exactly one category from: ${CATEGORIES.join(', ')}. Return JSON only with category and polygon. polygon is an array of 8–30 [x,y] points tracing the visible silhouette of ONLY this object in FULL IMAGE percentage coordinates (0–100), not crop coordinates. Trace tightly around the visible object, including its pot if indoor plant. Exclude furniture and every foreground object: when a sofa occludes a plant, trace along the plant/sofa boundary so no sofa pixels lie inside the polygon. Do not use a bounding rectangle. If the object cannot be outlined confidently, return polygon: [].`},
+        {type:'input_image',image_url:`data:${image.type};base64,${base64}`,detail:'high'},
         {type:'input_image',image_url:`data:${crop.type};base64,${cropBase64}`,detail:'high'},
       ]}],
     });
-    const raw=response.output_text.toLowerCase().trim();
-    const category=CATEGORIES.find(item=>raw===item)||[...CATEGORIES].sort((a,b)=>b.length-a.length).find(item=>raw.includes(item))||'decor accessory';
+    const parsed=JSON.parse(response.output_text.replace(/^```(?:json)?\s*|\s*```$/g,''));
+    if(moving&&(!MOVE_ITEMS.includes(parsed.category)||hint&&parsed.category!==hint))return NextResponse.json({error:'Could not select that furniture. Choose Bed or Desk above the photo and tap its center.'},{status:422});
+    const category=CATEGORIES.find(item=>item===parsed.category)||'decor accessory';
+    const polygon=Array.isArray(parsed.polygon)&&parsed.polygon.length>=3&&parsed.polygon.length<=40&&parsed.polygon.every((point:unknown)=>Array.isArray(point)&&point.length===2&&point.every(value=>typeof value==='number'&&Number.isFinite(value)&&value>=0&&value<=100))?parsed.polygon:[];
     const label=itemLabel(category);
     const query=`${style} ${palette} ${category} for living room`;
-    return NextResponse.json({category,label,x,y,query,storeLinks:storeLinks(query),source:'visual selection'});
+    return NextResponse.json({category,label,x,y,polygon,query,storeLinks:storeLinks(query),source:'visual selection'});
   }catch(error:any){
     console.error('Item identification failed',error);
     return NextResponse.json({error:typeof error?.message==='string'?error.message:'Could not identify this item.'},{status:500});
